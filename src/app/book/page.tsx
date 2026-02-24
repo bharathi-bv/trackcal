@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import DatePicker from "@/components/booking/DatePicker";
 
 export default function BookPage() {
   return (
@@ -32,7 +33,7 @@ export default function BookPage() {
           <CardContent className="p-6">
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="rounded-md border bg-muted/30 p-4">
-                Date picker goes here
+                <DatePicker />
               </div>
               <div className="rounded-md border bg-muted/30 p-4">
                 Time slots go here
