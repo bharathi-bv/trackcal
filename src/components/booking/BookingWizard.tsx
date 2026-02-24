@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import DatePicker from "@/components/booking/DatePicker";
 
 function StepLabel({ step }: { step: number }) {
   const labels = {
@@ -52,7 +53,7 @@ export default function BookingWizard() {
           <div className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="rounded-md border bg-muted/30 p-4">
-                Date picker goes here
+                <DatePicker />
               </div>
               <div className="rounded-md border bg-muted/30 p-4">
                 Time slots go here
