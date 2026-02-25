@@ -1,0 +1,241 @@
+/* ============================================================
+   TrackCal Design System — tokens.css
+   Single source of truth. Import this once at the root.
+   ============================================================ */
+
+:root {
+
+  /* ── BRAND BLUE (accent only — use sparingly) ─────────── */
+  --blue-50:   #f0f7ff;
+  --blue-100:  #dbeeff;
+  --blue-200:  #b3d4ff;
+  --blue-300:  #7ab8ff;
+  --blue-400:  #4a9eff;   /* primary accent */
+  --blue-500:  #2d7dd2;   /* hover / pressed */
+  --blue-600:  #1a5fa8;   /* dark accent */
+  --blue-700:  #0f3f73;
+
+  /* ── NEUTRALS (primary palette) ──────────────────────── */
+  --white:     #ffffff;
+  --gray-50:   #fafafa;
+  --gray-100:  #f5f5f5;
+  --gray-200:  #e8e8e8;
+  --gray-300:  #d4d4d4;
+  --gray-400:  #a3a3a3;
+  --gray-500:  #737373;
+  --gray-600:  #525252;
+  --gray-700:  #404040;
+  --gray-800:  #262626;
+  --gray-900:  #171717;
+  --black:     #0a0a0a;
+
+  /* ── SEMANTIC ─────────────────────────────────────────── */
+  --success:        #16a34a;
+  --success-bg:     #f0fdf4;
+  --success-border: #bbf7d0;
+  --warning:        #d97706;
+  --warning-bg:     #fffbeb;
+  --warning-border: #fde68a;
+  --error:          #dc2626;
+  --error-bg:       #fef2f2;
+  --error-border:   #fecaca;
+  --info:           var(--blue-400);
+  --info-bg:        var(--blue-50);
+  --info-border:    var(--blue-200);
+
+  /* ── SURFACES ─────────────────────────────────────────── */
+  --surface-page:     var(--white);
+  --surface-subtle:   var(--gray-50);
+  --surface-raised:   var(--white);
+  --surface-overlay:  rgba(255,255,255,0.95);
+  --surface-invert:   var(--gray-900);
+
+  /* ── BORDERS ──────────────────────────────────────────── */
+  --border-subtle:  var(--gray-100);
+  --border-default: var(--gray-200);
+  --border-strong:  var(--gray-300);
+  --border-accent:  var(--blue-400);
+  --border-invert:  rgba(255,255,255,0.12);
+
+  /* ── TEXT ─────────────────────────────────────────────── */
+  --text-primary:   var(--gray-900);
+  --text-secondary: var(--gray-600);
+  --text-tertiary:  var(--gray-400);
+  --text-disabled:  var(--gray-300);
+  --text-accent:    var(--blue-500);
+  --text-invert:    var(--white);
+  --text-invert-secondary: rgba(255,255,255,0.65);
+
+  /* ── SHADOWS ──────────────────────────────────────────── */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.07), 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.08), 0 8px 10px rgba(0,0,0,0.04);
+  /* Blue-tinted shadows for elevated interactive elements */
+  --shadow-blue-sm: 0 2px 8px rgba(74,158,255,0.20);
+  --shadow-blue-md: 0 4px 16px rgba(74,158,255,0.24);
+  --shadow-blue-lg: 0 8px 28px rgba(74,158,255,0.28);
+
+  /* ── BORDER RADIUS ────────────────────────────────────── */
+  --radius-xs:   4px;
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-2xl:  20px;
+  --radius-3xl:  24px;
+  --radius-full: 9999px;
+
+  /* ── SPACING (4px base grid) ──────────────────────────── */
+  --space-0:  0px;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* ── TYPOGRAPHY ───────────────────────────────────────── */
+  --font-sans:  'Manrope', system-ui, -apple-system, sans-serif;
+  /* Use Manrope throughout — vary weight for hierarchy */
+
+  /* Size scale */
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 15px;
+  --text-md:   17px;
+  --text-lg:   20px;
+  --text-xl:   24px;
+  --text-2xl:  30px;
+  --text-3xl:  36px;
+  --text-4xl:  48px;
+  --text-5xl:  60px;
+  --text-6xl:  72px;
+
+  /* Weight scale */
+  --weight-light:     300;
+  --weight-regular:   400;
+  --weight-medium:    500;
+  --weight-semibold:  600;
+  --weight-bold:      700;
+  --weight-extrabold: 800;
+
+  /* Line heights */
+  --leading-none:    1;
+  --leading-tight:   1.1;
+  --leading-snug:    1.25;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+  --leading-loose:   1.8;
+
+  /* Letter spacing */
+  --tracking-tight:  -0.03em;
+  --tracking-snug:   -0.02em;
+  --tracking-normal:  0em;
+  --tracking-wide:    0.04em;
+  --tracking-wider:   0.08em;
+  --tracking-widest:  0.12em;
+
+  /* ── TRANSITIONS ──────────────────────────────────────── */
+  --ease-default: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:      cubic-bezier(0.4, 0, 1, 1);
+  --ease-out:     cubic-bezier(0, 0, 0.2, 1);
+  --duration-fast:   120ms;
+  --duration-base:   200ms;
+  --duration-slow:   300ms;
+
+  /* ── Z-INDEX ──────────────────────────────────────────── */
+  --z-base:    0;
+  --z-raised:  10;
+  --z-dropdown:100;
+  --z-sticky:  200;
+  --z-overlay: 300;
+  --z-modal:   400;
+  --z-toast:   500;
+
+  /* ── LAYOUT ───────────────────────────────────────────── */
+  --container-sm:  640px;
+  --container-md:  768px;
+  --container-lg:  1024px;
+  --container-xl:  1280px;
+  --container-2xl: 1440px;
+
+  /* ── COMPONENT TOKENS ─────────────────────────────────── */
+
+  /* Button */
+  --btn-height-sm:  32px;
+  --btn-height-md:  38px;
+  --btn-height-lg:  46px;
+  --btn-px-sm:      var(--space-3);
+  --btn-px-md:      var(--space-5);
+  --btn-px-lg:      var(--space-6);
+  --btn-radius:     var(--radius-md);
+  --btn-font-size:  var(--text-sm);
+  --btn-font-weight:var(--weight-semibold);
+
+  /* Input */
+  --input-height-sm: 32px;
+  --input-height-md: 38px;
+  --input-height-lg: 46px;
+  --input-px:        var(--space-4);
+  --input-radius:    var(--radius-md);
+  --input-border:    var(--border-default);
+  --input-bg:        var(--white);
+  --input-focus-ring: 0 0 0 3px rgba(74,158,255,0.15);
+
+  /* Card */
+  --card-radius:   var(--radius-xl);
+  --card-padding:  var(--space-6);
+  --card-border:   var(--border-default);
+  --card-bg:       var(--white);
+  --card-shadow:   var(--shadow-sm);
+
+  /* Badge */
+  --badge-radius:  var(--radius-full);
+  --badge-px:      var(--space-2);
+  --badge-py:      3px;
+  --badge-font-size: var(--text-xs);
+  --badge-font-weight: var(--weight-semibold);
+
+  /* Nav */
+  --nav-height:    60px;
+  --nav-bg:        var(--white);
+  --nav-border:    var(--border-default);
+}
+
+/* ── DARK MODE OVERRIDES ────────────────────────────────── */
+[data-theme="dark"] {
+  --surface-page:     #0a0a0a;
+  --surface-subtle:   #141414;
+  --surface-raised:   #1a1a1a;
+  --surface-overlay:  rgba(26,26,26,0.95);
+  --surface-invert:   var(--white);
+
+  --border-subtle:  rgba(255,255,255,0.06);
+  --border-default: rgba(255,255,255,0.10);
+  --border-strong:  rgba(255,255,255,0.18);
+
+  --text-primary:   rgba(255,255,255,0.95);
+  --text-secondary: rgba(255,255,255,0.60);
+  --text-tertiary:  rgba(255,255,255,0.36);
+  --text-disabled:  rgba(255,255,255,0.24);
+  --text-invert:    var(--black);
+
+  --card-bg:        var(--surface-raised);
+  --card-border:    var(--border-default);
+  --nav-bg:         var(--surface-subtle);
+  --nav-border:     var(--border-subtle);
+  --input-bg:       var(--surface-subtle);
+  --input-border:   var(--border-default);
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.3);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.4), 0 4px 6px rgba(0,0,0,0.3);
+}

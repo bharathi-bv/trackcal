@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { UtmParams } from "@/utils/attribution";
 
 export type BookingDetails = {
   name: string;
@@ -12,11 +13,13 @@ type BookingState = {
   selectedDate: string | null;
   selectedTime: string | null;
   details: BookingDetails;
+  utmParams: UtmParams;
 
   setStep: (step: BookingState["step"]) => void;
   setDate: (iso: string | null) => void;
   setTime: (time: string | null) => void;
   setDetails: (details: BookingDetails) => void;
+  setUtmParams: (params: UtmParams) => void;
   reset: () => void;
 };
 
@@ -27,16 +30,20 @@ export const useBookingStore = create<BookingState>((set) => ({
   selectedDate: null,
   selectedTime: null,
   details: emptyDetails,
+  utmParams: {},
 
   setStep: (step) => set({ step }),
   setDate: (iso) => set({ selectedDate: iso, selectedTime: null }),
   setTime: (time) => set({ selectedTime: time }),
   setDetails: (details) => set({ details }),
+  setUtmParams: (params) => set({ utmParams: params }),
+  // reset preserves utmParams — user may book again from same campaign session
   reset: () =>
-    set({
+    set((state) => ({
       step: 1,
       selectedDate: null,
       selectedTime: null,
       details: emptyDetails,
-    }),
+      utmParams: state.utmParams,
+    })),
 }));

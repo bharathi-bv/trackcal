@@ -6,9 +6,6 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { useBookingStore } from "@/store/bookingStore";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
   FormControl,
@@ -41,21 +38,33 @@ export default function DetailsForm() {
     mode: "onTouched",
   });
 
-  function onSubmit(values: Values) {
-    setDetails(values);
-  }
+  // Auto-save to store on every change — no submit button needed
+  const values = form.watch();
+  React.useEffect(() => {
+    setDetails({
+      name: values.name ?? "",
+      email: values.email ?? "",
+      phone: values.phone,
+      notes: values.notes,
+    });
+  }, [values.name, values.email, values.phone, values.notes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="space-y-4">
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
       <div>
-        <h3 className="text-base font-semibold">Your details</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          This is what we’ll use to confirm the booking.
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+          Your details
+        </h3>
+        <p style={{ marginTop: "var(--space-1)", fontSize: 13, color: "var(--text-secondary)" }}>
+          This is what we&apos;ll use to confirm the booking.
         </p>
       </div>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form
+          onSubmit={(e) => e.preventDefault()}
+          style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}
+        >
           <FormField
             control={form.control}
             name="name"
@@ -63,7 +72,7 @@ export default function DetailsForm() {
               <FormItem>
                 <FormLabel>Name</FormLabel>
                 <FormControl>
-                  <Input placeholder="Your full name" {...field} />
+                  <input className="input" placeholder="Your full name" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -77,7 +86,7 @@ export default function DetailsForm() {
               <FormItem>
                 <FormLabel>Email</FormLabel>
                 <FormControl>
-                  <Input type="email" placeholder="you@company.com" {...field} />
+                  <input className="input" type="email" placeholder="you@company.com" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -91,7 +100,7 @@ export default function DetailsForm() {
               <FormItem>
                 <FormLabel>Phone (optional)</FormLabel>
                 <FormControl>
-                  <Input placeholder="+91 9XXXX XXXXX" {...field} />
+                  <input className="input" placeholder="+91 9XXXX XXXXX" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -105,9 +114,10 @@ export default function DetailsForm() {
               <FormItem>
                 <FormLabel>Notes (optional)</FormLabel>
                 <FormControl>
-                  <Textarea
+                  <textarea
+                    className="input textarea"
                     placeholder="Anything we should know before the call?"
-                    rows={4}
+                    rows={3}
                     {...field}
                   />
                 </FormControl>
@@ -115,10 +125,6 @@ export default function DetailsForm() {
               </FormItem>
             )}
           />
-
-          <Button type="submit" variant="outline" className="w-full">
-            Save details
-          </Button>
         </form>
       </Form>
     </div>

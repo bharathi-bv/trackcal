@@ -1,6 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap');
+@import './styles/trackcal/src/tokens.css';
+@import './styles/trackcal/src/base.css';
+@import './styles/trackcal/src/components.css';
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+
+/* Wire TrackCal tokens into shadcn's variable names */
+:root {
+  --font-sans: 'Manrope', system-ui, sans-serif;
+  --background: 255 255 255;
+  --foreground: 23 23 23;
+  --border: 232 232 232;
+  --ring: 74 158 255;
+  --radius: 0.5rem;
+}
 
 @custom-variant dark (&:is(.dark *));
 
