@@ -12,6 +12,7 @@
 
 import { NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
+import { createCalendarEvent } from "@/lib/google-calendar";
 
 // ── POST /api/bookings ─────────────────────────────────────────────────────
 
@@ -76,6 +77,15 @@ export async function POST(request: Request) {
     if (error) {
       console.error("[bookings] insert error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Attempt to create a Google Calendar event and send invite to the booker.
+    // We do this AFTER saving to Supabase so a calendar API failure never
+    // prevents the booking from being recorded. Non-fatal.
+    try {
+      await createCalendarEvent({ date, time, name, email });
+    } catch (calErr) {
+      console.warn("[bookings] calendar event skipped (not connected?):", calErr);
     }
 
     return NextResponse.json({ id: data.id }, { status: 201 });

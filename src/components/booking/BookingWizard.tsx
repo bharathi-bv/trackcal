@@ -9,7 +9,12 @@ import { trackBookingStarted, trackBookingCompleted } from "@/lib/analytics";
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function toISODate(d: Date) {
-  return d.toISOString().split("T")[0];
+  // Use local date parts — toISOString() converts to UTC which rolls the date
+  // back by one day for UTC+ timezones (e.g. midnight IST = 6:30 PM UTC prev day)
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function formatMonthYear(d: Date) {
