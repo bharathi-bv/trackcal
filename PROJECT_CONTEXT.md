@@ -82,3 +82,36 @@ TrackCal is an attribution-safe scheduling app. It captures UTM/click IDs on ent
   - Server writes through API routes
   - Analytics wrappers centralized in `src/lib/analytics.ts`
   - Google integration centralized in `src/lib/google-calendar.ts`
+
+## Added External Context (Temp Support Files)
+Source files:
+- `/Users/bharathi/Downloads/01 Devving/Projects/Temp support files/Role, pivot context.md`
+- `/Users/bharathi/Downloads/01 Devving/Projects/Temp support files/Trackcal Learning Plan.md`
+
+### Role/Pivot Context Summary
+- Strategic direction: evolve from growth leadership to growth engineering (higher experiment velocity via AI-assisted building).
+- Core execution model: faster build-learn loops (roughly days, not weeks), with prioritization and judgment as key constraints.
+- Positioning: combine growth strategy (funnel/attribution/A-B testing) with hands-on shipping in product code.
+- Skill philosophy: AI handles boilerplate; focus on architecture decisions, debugging, trade-offs, and production judgment.
+- TrackCal framing in this doc: portfolio-grade proof of growth-native engineering (attribution + scheduling + analytics).
+
+### TrackCal Learning Plan Summary
+- Structured 10-phase plan (about 100 hours) from setup to deployment/docs.
+- Major phases:
+  - Foundation and booking UI
+  - Multi-step booking flow with Zustand
+  - Attribution capture + analytics instrumentation
+  - Google Calendar OAuth/availability/event creation
+  - Backend/database hardening
+  - Auth/workspaces
+  - Round-robin logic
+  - Dashboard/reporting
+  - Polish
+  - Deploy/documentation
+- Operating pattern per phase: build tasks, explicit AI prompts, study tasks, literacy checks, and deliverables.
+- Practical use for this repo: treat the plan as roadmap and checkpoint rubric; prioritize shipping + understanding over writing everything from scratch.
+
+### How To Use This Context During Development
+- Prefer tasks that increase validated learning speed (instrumentation, clear events, fast iteration).
+- Keep implementation decisions tied to measurable outcomes (conversion, attribution quality, booking completion).
+- Maintain production-safe defaults while allowing temporary experiment code where learning value is high.
