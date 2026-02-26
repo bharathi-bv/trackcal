@@ -28,6 +28,13 @@ function formatSelectedDate(iso: string) {
   });
 }
 
+function formatDateCompact(iso: string) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function buildCalendarGrid(year: number, month: number) {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -60,6 +67,7 @@ function LeftPanel({
   selectedDate,
   selectedTime,
   step,
+  isMobile,
 }: {
   name?: string;
   duration?: number;
@@ -70,6 +78,7 @@ function LeftPanel({
   selectedDate?: string | null;
   selectedTime?: string | null;
   step: number;
+  isMobile?: boolean;
 }) {
   const eventName = name ?? "Discovery Call";
   const eventDuration = duration ?? 30;
@@ -78,6 +87,100 @@ function LeftPanel({
   const [imgError, setImgError] = React.useState(false);
   const showPhoto = hostPhotoUrl && !imgError;
 
+  const avatarInner = showPhoto ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={hostPhotoUrl!}
+      alt={displayName}
+      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      onError={() => setImgError(true)}
+    />
+  ) : hostName ? (
+    initial
+  ) : (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+
+  // ── Mobile: compact top strip ──────────────────────────────────────────
+  if (isMobile) {
+    return (
+      <div
+        style={{
+          borderBottom: "1px solid var(--border-default)",
+          padding: "var(--space-3) var(--space-5)",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-3)",
+        }}
+      >
+        {/* Compact avatar */}
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: "var(--radius-full)",
+            background: showPhoto ? "var(--surface-subtle)" : "var(--blue-400)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: showPhoto ? undefined : 14,
+            fontWeight: 800,
+            color: "white",
+            overflow: "hidden",
+            flexShrink: 0,
+          }}
+        >
+          {avatarInner}
+        </div>
+
+        {/* Event info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: 500, marginBottom: 1 }}>
+            {displayName} · {eventDuration} min
+          </div>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 800,
+              color: "var(--text-primary)",
+              lineHeight: 1.2,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {eventName}
+          </div>
+        </div>
+
+        {/* Step 2: selected slot chip */}
+        {step === 2 && selectedDate && selectedTime && (
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: "var(--blue-500)",
+              background: "var(--blue-50)",
+              border: "1px solid rgba(74,158,255,0.25)",
+              borderRadius: "var(--radius-full)",
+              padding: "4px 10px",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            {formatDateCompact(selectedDate)} · {selectedTime}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Desktop: full left panel ───────────────────────────────────────────
   return (
     <div
       className="booking-wizard-left"
@@ -110,33 +213,7 @@ function LeftPanel({
           flexShrink: 0,
         }}
       >
-        {showPhoto ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={hostPhotoUrl!}
-            alt={displayName}
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            onError={() => setImgError(true)}
-          />
-        ) : hostName ? (
-          initial
-        ) : (
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="white"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <rect x="3" y="4" width="18" height="18" rx="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-          </svg>
-        )}
+        {avatarInner}
       </div>
 
       {/* Display name + event title */}
@@ -408,6 +485,14 @@ export default function BookingWizard({
     }
   }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    function check() { setIsMobile(window.innerWidth < 768); }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
 
@@ -459,9 +544,10 @@ export default function BookingWizard({
         borderRadius: "var(--radius-xl)",
         boxShadow: "var(--shadow-xl)",
         display: "flex",
+        flexDirection: isMobile ? "column" : "row",
         width: "100%",
         maxWidth: 1020,
-        minHeight: 580,
+        minHeight: isMobile ? "auto" : 580,
         overflow: "hidden",
       }}
     >
@@ -473,7 +559,7 @@ export default function BookingWizard({
         hostName={hostProfile?.host_name}
         hostPhotoUrl={hostProfile?.profile_photo_url}
         calendarContent={
-          step === 1 ? (
+          step === 1 && !isMobile ? (
             <InlineCalendar
               viewMonth={viewMonth}
               setViewMonth={setViewMonth}
@@ -485,13 +571,14 @@ export default function BookingWizard({
         selectedDate={selectedDate}
         selectedTime={selectedTime}
         step={step}
+        isMobile={isMobile}
       />
 
       {/* ── Right panel ── */}
       <div
         style={{
           flex: 1,
-          padding: "var(--space-8)",
+          padding: isMobile ? "var(--space-4)" : "var(--space-8)",
           display: "flex",
           flexDirection: "column",
           gap: "var(--space-5)",
@@ -503,9 +590,10 @@ export default function BookingWizard({
         <div
           style={{
             display: "flex",
-            alignItems: "center",
+            alignItems: isMobile ? "flex-start" : "center",
+            flexDirection: isMobile ? "column" : "row",
             justifyContent: "space-between",
-            gap: "var(--space-3)",
+            gap: "var(--space-2)",
           }}
         >
           <span
@@ -550,6 +638,7 @@ export default function BookingWizard({
               slot_increment={eventType?.slot_increment ?? 30}
               duration={eventType?.duration ?? 30}
               viewerTimezone={selectedTimezone}
+              dayCount={isMobile ? 3 : 5}
             />
 
             <button

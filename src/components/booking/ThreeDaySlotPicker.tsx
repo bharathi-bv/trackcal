@@ -103,9 +103,9 @@ function buildRows(start_hour: number, end_hour: number, slot_increment: number)
   return rows;
 }
 
-function getDays(anchor: string): string[] {
+function getDays(anchor: string, count: number): string[] {
   const base = new Date(anchor + "T00:00:00");
-  return Array.from({ length: DAY_COUNT }, (_, offset) => {
+  return Array.from({ length: count }, (_, offset) => {
     const d = new Date(base);
     d.setDate(d.getDate() + offset);
     return toISODate(d);
@@ -175,6 +175,7 @@ export default function ThreeDaySlotPicker({
   slot_increment = 30,
   duration = 30,
   viewerTimezone = "UTC",
+  dayCount,
 }: {
   anchorDate: string;
   onAnchorChange: (iso: string) => void;
@@ -184,8 +185,11 @@ export default function ThreeDaySlotPicker({
   slot_increment?: number;
   duration?: number;
   viewerTimezone?: string;
+  dayCount?: number;
 }) {
   const { selectedDate, selectedTime, setDate, setTime } = useBookingStore();
+
+  const count = dayCount ?? DAY_COUNT;
 
   const [slotsMap, setSlotsMap] = React.useState<Record<string, string[]>>({});
   const [loadingSet, setLoadingSet] = React.useState<Set<string>>(new Set());
@@ -208,7 +212,7 @@ export default function ThreeDaySlotPicker({
     [start_hour, end_hour, slot_increment]
   );
 
-  const days = React.useMemo(() => getDays(anchorDate), [anchorDate]);
+  const days = React.useMemo(() => getDays(anchorDate, count), [anchorDate, count]);
 
   const todayISO = toISODate(new Date());
   const canGoPrev = anchorDate > todayISO;
@@ -216,7 +220,7 @@ export default function ThreeDaySlotPicker({
   function prevDays() {
     if (!canGoPrev) return;
     const base = new Date(anchorDate + "T00:00:00");
-    base.setDate(base.getDate() - DAY_COUNT);
+    base.setDate(base.getDate() - count);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const candidate = base < today ? today : base;
@@ -225,7 +229,7 @@ export default function ThreeDaySlotPicker({
 
   function nextDays() {
     const base = new Date(anchorDate + "T00:00:00");
-    base.setDate(base.getDate() + DAY_COUNT);
+    base.setDate(base.getDate() + count);
     onAnchorChange(toISODate(base));
   }
 
@@ -282,7 +286,7 @@ export default function ThreeDaySlotPicker({
 
   return (
     <div style={{ overflowX: "auto" }}>
-      <div style={{ minWidth: 360 }}>
+      <div style={{ minWidth: LABEL_WIDTH + count * 60 }}>
         {/* ── Navigation ── */}
         <div
           style={{

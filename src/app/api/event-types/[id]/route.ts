@@ -41,6 +41,7 @@ const patchSchema = z
     max_bookings_per_slot: z.number().int().min(1).max(1000).nullable().optional(),
     weekly_availability: z
       .record(
+        z.string(),
         z.object({
           enabled: z.boolean(),
           start_hour: z.number().int().min(0).max(23),

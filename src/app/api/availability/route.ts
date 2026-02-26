@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
   let settings = DEFAULT_SETTINGS;
   if (eventSlug) {
     const db = createServerClient();
-    const { data: et } = await db
+    const { data: etRaw } = await db
       .from("event_types")
       .select(
         "duration, start_hour, end_hour, slot_increment, min_notice_hours, max_days_in_advance, buffer_before_minutes, buffer_after_minutes, max_bookings_per_day, max_bookings_per_slot, weekly_availability, blocked_dates"
@@ -63,6 +63,9 @@ export async function GET(request: NextRequest) {
       .eq("slug", eventSlug)
       .eq("is_active", true)
       .maybeSingle();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const et = etRaw as any;
 
     if (et) {
       // Use event's custom schedule if set; otherwise fall back to global host_settings schedule

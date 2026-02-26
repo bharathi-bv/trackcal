@@ -14,7 +14,7 @@ const settingsSchema = z.object({
   host_name: z.string().trim().max(120).optional().nullable(),
   // Allow full URLs, data: URIs (file-upload base64), or empty string
   profile_photo_url: z.string().trim().max(500000).optional().or(z.literal("")).nullable(),
-  weekly_availability: z.record(z.any()).optional().nullable(),
+  weekly_availability: z.record(z.string(), z.any()).optional().nullable(),
 });
 
 export async function GET() {

@@ -143,7 +143,7 @@ export default function EventTypesClient({
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [activeSection, setActiveSection] = useState<SectionKey>("basics");
   const drawerScrollRef = useRef<HTMLDivElement | null>(null);
-  const sectionRefs = useRef<Record<SectionKey, HTMLDivElement | null>>({
+  const sectionRefs = useRef<Record<SectionKey, HTMLElement | null>>({
     basics: null,
     scheduling: null,
     availability: null,

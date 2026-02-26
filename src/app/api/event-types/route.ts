@@ -41,7 +41,7 @@ const eventTypeSchema = z.object({
   buffer_after_minutes: z.number().int().min(0).max(240).optional().default(0),
   max_bookings_per_day: z.number().int().min(1).max(1000).optional().nullable(),
   max_bookings_per_slot: z.number().int().min(1).max(1000).optional().nullable(),
-  weekly_availability: z.record(daySchema).optional().nullable(),
+  weekly_availability: z.record(z.string(), daySchema).optional().nullable(),
   blocked_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional().nullable(),
   is_active: z.boolean().optional().default(true),
 });
