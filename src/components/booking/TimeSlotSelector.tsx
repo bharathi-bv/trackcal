@@ -17,7 +17,7 @@ function buildDefaultSlots(): string[] {
   return slots;
 }
 
-export default function TimeSlotSelector() {
+export default function TimeSlotSelector({ eventSlug }: { eventSlug?: string }) {
   const { selectedDate, selectedTime, setTime } = useBookingStore();
 
   const [slots, setSlots] = React.useState<string[]>([]);
@@ -32,7 +32,8 @@ export default function TimeSlotSelector() {
     setSlots([]);
     setTime(null); // clear any previously selected time for the old date
 
-    fetch(`/api/availability?date=${selectedDate}`)
+    const url = `/api/availability?date=${selectedDate}${eventSlug ? `&event=${eventSlug}` : ""}`;
+    fetch(url)
       .then((r) => r.json())
       .then((data: { slots: string[] | null }) => {
         if (Array.isArray(data.slots)) {

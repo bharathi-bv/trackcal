@@ -3,14 +3,12 @@
 import * as React from "react";
 import { useBookingStore } from "@/store/bookingStore";
 import DetailsForm from "@/components/booking/DetailsForm";
-import TimeSlotSelector from "@/components/booking/TimeSlotSelector";
+import ThreeDaySlotPicker from "@/components/booking/ThreeDaySlotPicker";
 import { trackBookingStarted, trackBookingCompleted } from "@/lib/analytics";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function toISODate(d: Date) {
-  // Use local date parts — toISOString() converts to UTC which rolls the date
-  // back by one day for UTC+ timezones (e.g. midnight IST = 6:30 PM UTC prev day)
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -22,21 +20,42 @@ function formatMonthYear(d: Date) {
 }
 
 function formatSelectedDate(iso: string) {
-  const d = new Date(iso + "T00:00:00");
-  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 function buildCalendarGrid(year: number, month: number) {
-  const firstDay = new Date(year, month, 1).getDay(); // 0 = Sun
+  const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (Date | null)[] = [];
-
   for (let i = 0; i < firstDay; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
   while (cells.length % 7 !== 0) cells.push(null);
-
   return cells;
 }
+
+// ── Common timezones ───────────────────────────────────────────────────────
+
+const COMMON_TIMEZONES = [
+  { iana: "America/Los_Angeles", label: "Pacific Time (PT)" },
+  { iana: "America/Denver", label: "Mountain Time (MT)" },
+  { iana: "America/Chicago", label: "Central Time (CT)" },
+  { iana: "America/New_York", label: "Eastern Time (ET)" },
+  { iana: "America/Sao_Paulo", label: "Brasília Time (BRT)" },
+  { iana: "Europe/London", label: "London (GMT/BST)" },
+  { iana: "Europe/Paris", label: "Central European (CET)" },
+  { iana: "Europe/Berlin", label: "Berlin (CET/CEST)" },
+  { iana: "Asia/Dubai", label: "Gulf Time (GST, UTC+4)" },
+  { iana: "Asia/Kolkata", label: "India Standard Time (IST)" },
+  { iana: "Asia/Bangkok", label: "Indochina Time (ICT)" },
+  { iana: "Asia/Singapore", label: "Singapore Time (SGT)" },
+  { iana: "Asia/Tokyo", label: "Japan Standard Time (JST)" },
+  { iana: "Australia/Sydney", label: "Sydney (AEST/AEDT)" },
+  { iana: "Pacific/Auckland", label: "New Zealand (NZST)" },
+];
 
 // ── Step header ────────────────────────────────────────────────────────────
 
@@ -46,19 +65,60 @@ const STEP_META: Record<number, { label: string }> = {
   4: { label: "BOOKING CONFIRMED" },
 };
 
-// ── Left Panel (static host info) ─────────────────────────────────────────
+// ── Left Panel ─────────────────────────────────────────────────────────────
 
-function LeftPanel() {
+function LeftPanel({
+  name,
+  duration,
+  description,
+  hostName,
+  hostPhotoUrl,
+  selectedTimezone,
+  timezoneLabel,
+  currentTimeDisplay,
+  timezoneOptions,
+  onTimezoneChange,
+  // Mini calendar injected here in step 1
+  calendarContent,
+  // shown only in step 2
+  selectedDate,
+  selectedTime,
+  step,
+}: {
+  name?: string;
+  duration?: number;
+  description?: string | null;
+  hostName?: string | null;
+  hostPhotoUrl?: string | null;
+  selectedTimezone: string;
+  timezoneLabel: string;
+  currentTimeDisplay: string;
+  timezoneOptions: { iana: string; label: string }[];
+  onTimezoneChange: (tz: string) => void;
+  calendarContent?: React.ReactNode;
+  selectedDate?: string | null;
+  selectedTime?: string | null;
+  step: number;
+}) {
+  const eventName = name ?? "Discovery Call";
+  const eventDuration = duration ?? 30;
+  const displayName = hostName?.trim() || "TrackCal";
+  const initial = displayName.charAt(0).toUpperCase();
+  const [imgError, setImgError] = React.useState(false);
+  const showPhoto = hostPhotoUrl && !imgError;
+
   return (
     <div
+      className="booking-wizard-left"
       style={{
-        width: 272,
+        width: 280,
         flexShrink: 0,
         borderRight: "1px solid var(--border-default)",
         padding: "var(--space-8) var(--space-6)",
         display: "flex",
         flexDirection: "column",
         gap: "var(--space-5)",
+        overflowY: "auto",
       }}
     >
       {/* Avatar */}
@@ -67,21 +127,37 @@ function LeftPanel() {
           width: 52,
           height: 52,
           borderRadius: "var(--radius-full)",
-          background: "var(--blue-400)",
+          background: showPhoto ? "var(--surface-subtle)" : "var(--blue-400)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 24,
+          fontSize: showPhoto ? undefined : hostName ? 20 : 24,
+          fontWeight: 800,
+          color: "white",
+          overflow: "hidden",
           boxShadow: "var(--shadow-blue-sm)",
+          flexShrink: 0,
         }}
       >
-        📅
+        {showPhoto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={hostPhotoUrl!}
+            alt={displayName}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            onError={() => setImgError(true)}
+          />
+        ) : hostName ? (
+          initial
+        ) : (
+          "📅"
+        )}
       </div>
 
-      {/* Host + Event */}
+      {/* Display name + event title */}
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
         <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>
-          Alex Johnson
+          {displayName}
         </span>
         <h2
           style={{
@@ -92,33 +168,129 @@ function LeftPanel() {
             margin: 0,
           }}
         >
-          30-Minute Discovery Call
+          {eventName}
         </h2>
       </div>
 
       {/* Divider */}
       <div style={{ height: 1, background: "var(--border-default)" }} />
 
-      {/* Meta rows */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-        <MetaRow icon="🕐" label="30 minutes" />
-        <MetaRow icon="🎥" label="Video Call (Zoom)" />
-        <MetaRow icon="🌐" label="UTC / Your timezone" />
+      {/* Duration only — Video Call and timezone MetaRows removed */}
+      <MetaRow icon="🕐" label={`${eventDuration} minutes`} />
+
+      {/* Description */}
+      {description && (
+        <p
+          style={{
+            fontSize: 13,
+            color: "var(--text-secondary)",
+            lineHeight: 1.6,
+            margin: 0,
+          }}
+        >
+          {description}
+        </p>
+      )}
+
+      {/* ── Mini calendar (step 1 only) ── */}
+      {calendarContent && (
+        <>
+          <div style={{ height: 1, background: "var(--border-default)" }} />
+          {calendarContent}
+        </>
+      )}
+
+      {/* ── Timezone — Calendly-style compact selector ── */}
+      <div style={{ position: "relative" }}>
+        {/* Styled display layer (pointer-events:none so the select underneath receives clicks) */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+            padding: "var(--space-2) var(--space-3)",
+            border: "1px solid var(--border-default)",
+            borderRadius: "var(--radius-md)",
+            pointerEvents: "none",
+          }}
+        >
+          <span style={{ fontSize: 14 }}>🌐</span>
+          <span
+            style={{
+              flex: 1,
+              fontSize: 12,
+              fontWeight: 500,
+              color: "var(--text-primary)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {timezoneLabel}
+          </span>
+          <span style={{ fontSize: 12, color: "var(--text-secondary)", flexShrink: 0 }}>
+            {currentTimeDisplay}
+          </span>
+          <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>▾</span>
+        </div>
+        {/* Transparent native select handles the click / open */}
+        <select
+          style={{
+            position: "absolute",
+            inset: 0,
+            opacity: 0,
+            cursor: "pointer",
+            width: "100%",
+            height: "100%",
+          }}
+          value={selectedTimezone}
+          onChange={(e) => onTimezoneChange(e.target.value)}
+        >
+          {timezoneOptions.map((tz) => (
+            <option key={tz.iana} value={tz.iana}>
+              {tz.label}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Description — pushed to bottom */}
-      <p
-        style={{
-          marginTop: "auto",
-          fontSize: 13,
-          color: "var(--text-secondary)",
-          lineHeight: 1.6,
-          margin: 0,
-        }}
-      >
-        A quick chat to understand your needs and explore how we can work together. No commitment
-        required.
-      </p>
+      {/* ── Step 2: show the locked-in date + time ── */}
+      {step === 2 && selectedDate && selectedTime && (
+        <div
+          style={{
+            background: "var(--blue-50)",
+            border: "1px solid rgba(74,158,255,0.25)",
+            borderRadius: "var(--radius-lg)",
+            padding: "var(--space-4)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--space-1)",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.07em",
+              textTransform: "uppercase",
+              color: "var(--blue-400)",
+            }}
+          >
+            Selected
+          </span>
+          <span
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "var(--text-primary)",
+              lineHeight: 1.4,
+            }}
+          >
+            {formatSelectedDate(selectedDate)}
+          </span>
+          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{selectedTime}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -149,15 +321,20 @@ function MetaRow({ icon, label }: { icon: string; label: string }) {
 }
 
 // ── Inline Calendar ────────────────────────────────────────────────────────
+// Fully decoupled from the booking store — accepts selectedDate + onSelect as props.
+// In step 1, selectedDate = anchorDate (which 3-day window is being viewed).
 
 function InlineCalendar({
   viewMonth,
   setViewMonth,
+  selectedDate,
+  onSelect,
 }: {
   viewMonth: Date;
   setViewMonth: (d: Date) => void;
+  selectedDate: string | null;
+  onSelect: (iso: string) => void;
 }) {
-  const { selectedDate, setDate } = useBookingStore();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -169,22 +346,13 @@ function InlineCalendar({
     viewMonth.getFullYear() > today.getFullYear() ||
     viewMonth.getMonth() > today.getMonth();
 
-  function prevMonth() {
-    if (!canGoPrev) return;
-    setViewMonth(new Date(year, month - 1, 1));
-  }
-
-  function nextMonth() {
-    setViewMonth(new Date(year, month + 1, 1));
-  }
-
   return (
     <div>
       {/* Month nav */}
       <div className="cal-nav">
         <button
           className="btn btn-ghost btn-icon"
-          onClick={prevMonth}
+          onClick={() => canGoPrev && setViewMonth(new Date(year, month - 1, 1))}
           disabled={!canGoPrev}
           aria-label="Previous month"
           style={{ opacity: canGoPrev ? 1 : 0.3 }}
@@ -194,7 +362,7 @@ function InlineCalendar({
         <span className="cal-month">{formatMonthYear(viewMonth)}</span>
         <button
           className="btn btn-ghost btn-icon"
-          onClick={nextMonth}
+          onClick={() => setViewMonth(new Date(year, month + 1, 1))}
           aria-label="Next month"
         >
           ›
@@ -213,7 +381,7 @@ function InlineCalendar({
       {/* Day grid */}
       <div className="cal-days">
         {cells.map((date, i) => {
-          if (!date) return <div key={`empty-${i}`} />;
+          if (!date) return <div key={`e-${i}`} />;
 
           const iso = toISODate(date);
           const isPast = date < today;
@@ -232,7 +400,7 @@ function InlineCalendar({
             <button
               key={iso}
               className={cls}
-              onClick={() => !isPast && setDate(iso)}
+              onClick={() => !isPast && onSelect(iso)}
               disabled={isPast}
               aria-label={iso}
               aria-pressed={isSelected}
@@ -246,16 +414,93 @@ function InlineCalendar({
   );
 }
 
+// ── Types ──────────────────────────────────────────────────────────────────
+
+type EventTypeProp = {
+  id: string;
+  name: string;
+  slug: string;
+  duration: number;
+  description: string | null;
+  start_hour: number;
+  end_hour: number;
+  slot_increment: number;
+};
+
+type HostProfileProp = {
+  host_name: string | null;
+  profile_photo_url: string | null;
+};
+
 // ── Main Wizard ────────────────────────────────────────────────────────────
 
-export default function BookingWizard() {
-  const { step, setStep, reset, selectedDate, selectedTime, details, utmParams } = useBookingStore();
+export default function BookingWizard({
+  eventType,
+  hostProfile,
+}: {
+  eventType?: EventTypeProp;
+  hostProfile?: HostProfileProp;
+}) {
+  const { step, setStep, reset, selectedDate, selectedTime, details, utmParams, setDate, setTime } =
+    useBookingStore();
+
+  // anchorDate drives the mini-calendar highlight + which 3 days the picker shows.
+  // It is separate from selectedDate (the actual booking).
+  const [anchorDate, setAnchorDate] = React.useState<string | null>(() => {
+    // Default anchor = today
+    return toISODate(new Date());
+  });
+
   const [viewMonth, setViewMonth] = React.useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
 
-  // Fire "booking_started" once on mount — captures intent signal with UTM context
+  const [selectedTimezone, setSelectedTimezone] = React.useState("UTC");
+  const [now, setNow] = React.useState(() => new Date());
+
+  React.useEffect(() => {
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      setSelectedTimezone(tz);
+    } catch {
+      // keep UTC
+    }
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Timezone options — add detected tz at top if not in common list
+  const timezoneOptions = React.useMemo(() => {
+    const inList = COMMON_TIMEZONES.some((tz) => tz.iana === selectedTimezone);
+    if (inList) return COMMON_TIMEZONES;
+    return [
+      { iana: selectedTimezone, label: selectedTimezone.replace(/_/g, " ") },
+      ...COMMON_TIMEZONES,
+    ];
+  }, [selectedTimezone]);
+
+  const timezoneLabel = React.useMemo(
+    () =>
+      COMMON_TIMEZONES.find((tz) => tz.iana === selectedTimezone)?.label ??
+      selectedTimezone.replace(/_/g, " "),
+    [selectedTimezone]
+  );
+
+  const currentTimeDisplay = React.useMemo(() => {
+    try {
+      return now.toLocaleTimeString("en-US", {
+        timeZone: selectedTimezone,
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+    } catch {
+      return now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    }
+  }, [now, selectedTimezone]);
+
+  // Fire "booking_started" once on mount
   React.useEffect(() => {
     trackBookingStarted(utmParams);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -263,17 +508,24 @@ export default function BookingWizard() {
   // Fire "booking_completed" when user reaches the confirmed screen
   React.useEffect(() => {
     if (step === 4 && selectedDate && selectedTime) {
-      trackBookingCompleted({
-        utmParams,
-        date: selectedDate,
-        time: selectedTime,
-        email: details.email,
-      });
+      trackBookingCompleted({ utmParams, date: selectedDate, time: selectedTime, email: details.email });
     }
   }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+
+  // Mini calendar click: update anchor AND clear selection (user picked a new range)
+  function handleCalendarClick(iso: string) {
+    setAnchorDate(iso);
+    setDate(null);
+    setTime(null);
+  }
+
+  // Prev/Next in slot picker: only shift the 3-day window, keep any selection
+  function handlePickerNavigate(iso: string) {
+    setAnchorDate(iso);
+  }
 
   async function handleBookNow() {
     setIsSubmitting(true);
@@ -285,6 +537,7 @@ export default function BookingWizard() {
         body: JSON.stringify({
           date: selectedDate,
           time: selectedTime,
+          event_slug: eventType?.slug,
           ...details,
           ...utmParams,
         }),
@@ -304,19 +557,44 @@ export default function BookingWizard() {
 
   return (
     <div
+      className="booking-wizard-shell"
       style={{
         background: "var(--surface-page)",
         borderRadius: "var(--radius-xl)",
         boxShadow: "var(--shadow-xl)",
         display: "flex",
         width: "100%",
-        maxWidth: 880,
-        minHeight: 560,
+        maxWidth: 1020,
+        minHeight: 580,
         overflow: "hidden",
       }}
     >
       {/* ── Left panel ── */}
-      <LeftPanel />
+      <LeftPanel
+        name={eventType?.name}
+        duration={eventType?.duration}
+        description={eventType?.description}
+        hostName={hostProfile?.host_name}
+        hostPhotoUrl={hostProfile?.profile_photo_url}
+        selectedTimezone={selectedTimezone}
+        timezoneLabel={timezoneLabel}
+        currentTimeDisplay={currentTimeDisplay}
+        timezoneOptions={timezoneOptions}
+        onTimezoneChange={setSelectedTimezone}
+        calendarContent={
+          step === 1 ? (
+            <InlineCalendar
+              viewMonth={viewMonth}
+              setViewMonth={setViewMonth}
+              selectedDate={anchorDate}
+              onSelect={handleCalendarClick}
+            />
+          ) : undefined
+        }
+        selectedDate={selectedDate}
+        selectedTime={selectedTime}
+        step={step}
+      />
 
       {/* ── Right panel ── */}
       <div
@@ -325,8 +603,9 @@ export default function BookingWizard() {
           padding: "var(--space-8)",
           display: "flex",
           flexDirection: "column",
-          gap: "var(--space-6)",
+          gap: "var(--space-5)",
           overflowY: "auto",
+          minWidth: 0,
         }}
       >
         {/* Step header */}
@@ -342,28 +621,18 @@ export default function BookingWizard() {
           {meta.label}
         </span>
 
-        {/* ── Step 1: Calendar + Slots ── */}
+        {/* ── Step 1: 3-day slot picker (calendar is now in left panel) ── */}
         {step === 1 && (
           <>
-            <InlineCalendar viewMonth={viewMonth} setViewMonth={setViewMonth} />
-
-            {selectedDate && (
-              <>
-                <div>
-                  <p
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "var(--text-primary)",
-                      marginBottom: "var(--space-3)",
-                    }}
-                  >
-                    {formatSelectedDate(selectedDate)}
-                  </p>
-                  <TimeSlotSelector />
-                </div>
-              </>
-            )}
+            <ThreeDaySlotPicker
+              anchorDate={anchorDate ?? toISODate(new Date())}
+              onAnchorChange={handlePickerNavigate}
+              eventSlug={eventType?.slug}
+              start_hour={eventType?.start_hour ?? 9}
+              end_hour={eventType?.end_hour ?? 17}
+              slot_increment={eventType?.slot_increment ?? 30}
+              duration={eventType?.duration ?? 30}
+            />
 
             <button
               className="btn btn-primary w-full"
@@ -376,18 +645,29 @@ export default function BookingWizard() {
           </>
         )}
 
-        {/* ── Step 2: Details ── */}
+        {/* ── Step 2: Details form ── */}
         {step === 2 && (
           <>
             <DetailsForm />
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", marginTop: "auto" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+                marginTop: "auto",
+              }}
+            >
               {submitError && (
-                <p style={{ fontSize: 13, color: "var(--error)", textAlign: "center", margin: 0 }}>
+                <p style={{ fontSize: 13, color: "#ef4444", textAlign: "center", margin: 0 }}>
                   {submitError}
                 </p>
               )}
               <div style={{ display: "flex", gap: "var(--space-3)" }}>
-                <button className="btn btn-secondary" onClick={() => setStep(1)} disabled={isSubmitting}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setStep(1)}
+                  disabled={isSubmitting}
+                >
                   ← Back
                 </button>
                 <button
@@ -418,18 +698,12 @@ export default function BookingWizard() {
           >
             <div style={{ fontSize: 48 }}>✅</div>
             <h3
-              style={{
-                fontSize: 22,
-                fontWeight: 800,
-                color: "var(--text-primary)",
-                margin: 0,
-              }}
+              style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}
             >
               You&apos;re booked!
             </h3>
             <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0 }}>
-              A calendar invite is on its way to{" "}
-              <strong>{details.email}</strong>.
+              A calendar invite is on its way to <strong>{details.email}</strong>.
             </p>
             <div
               style={{
@@ -445,7 +719,7 @@ export default function BookingWizard() {
               }}
             >
               {[
-                { label: "Date", value: selectedDate ?? "" },
+                { label: "Date", value: selectedDate ? formatSelectedDate(selectedDate) : "" },
                 { label: "Time", value: selectedTime ?? "" },
                 { label: "Name", value: details.name },
                 { label: "Email", value: details.email },

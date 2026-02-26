@@ -21,9 +21,16 @@ const SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
 ];
 
-const WORK_START_HOUR = 9;
-const WORK_END_HOUR = 17;
-const SLOT_DURATION_MINUTES = 30;
+const DEFAULT_START_HOUR = 9;
+const DEFAULT_END_HOUR = 17;
+const DEFAULT_SLOT_MINUTES = 30;
+
+type SlotSettings = {
+  duration: number;
+  start_hour: number;
+  end_hour: number;
+  slot_increment: number;
+};
 
 // ── OAuth client factory ────────────────────────────────────────────────────
 
@@ -159,7 +166,15 @@ function minutesToLabel(totalMinutes: number): string {
 
 // ── Availability: free 30-min slots for a given date ───────────────────────
 
-export async function getAvailableSlots(date: string): Promise<string[]> {
+export async function getAvailableSlots(
+  date: string,
+  settings: SlotSettings = {
+    duration: DEFAULT_SLOT_MINUTES,
+    start_hour: DEFAULT_START_HOUR,
+    end_hour: DEFAULT_END_HOUR,
+    slot_increment: DEFAULT_SLOT_MINUTES,
+  }
+): Promise<string[]> {
   const auth = await getAuthedClient();
   const calendar = google.calendar({ version: "v3", auth });
 
@@ -174,12 +189,9 @@ export async function getAvailableSlots(date: string): Promise<string[]> {
   // for morning vs evening on DST transition days).
   const offsetStr = getOffsetString(tz, new Date(`${date}T12:00:00Z`));
 
-  // Build the freebusy query window in the host's local time.
-  // e.g. "2026-02-26T09:00:00+05:30" → Google interprets as 3:30 AM UTC.
-  // This means we're asking "what's busy during 9 AM–5 PM IST?" which is
-  // exactly what we want to compare against a 2 PM IST calendar event.
-  const dayStart = `${date}T${String(WORK_START_HOUR).padStart(2, "0")}:00:00${offsetStr}`;
-  const dayEnd = `${date}T${String(WORK_END_HOUR).padStart(2, "0")}:00:00${offsetStr}`;
+  // Build the freebusy query window in the host's local time using event type hours.
+  const dayStart = `${date}T${String(settings.start_hour).padStart(2, "0")}:00:00${offsetStr}`;
+  const dayEnd = `${date}T${String(settings.end_hour).padStart(2, "0")}:00:00${offsetStr}`;
 
   const { data } = await calendar.freebusy.query({
     requestBody: {
@@ -201,9 +213,15 @@ export async function getAvailableSlots(date: string): Promise<string[]> {
   const localMidnight = new Date(`${date}T00:00:00${offsetStr}`);
   const available: string[] = [];
 
-  for (let t = WORK_START_HOUR * 60; t < WORK_END_HOUR * 60; t += SLOT_DURATION_MINUTES) {
+  // Loop condition ensures every slot fully fits within available hours.
+  // e.g. 60-min slot with end_hour=17: last valid start = 16:00 (16*60+60 = 17*60 ✓)
+  for (
+    let t = settings.start_hour * 60;
+    t + settings.duration <= settings.end_hour * 60;
+    t += settings.slot_increment
+  ) {
     const slotStart = new Date(localMidnight.getTime() + t * 60 * 1000);
-    const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MINUTES * 60 * 1000);
+    const slotEnd = new Date(slotStart.getTime() + settings.duration * 60 * 1000);
 
     // freebusy busy[] are UTC Date objects — slotStart/slotEnd are also UTC → aligned
     const isBusy = busy.some((b) => {
@@ -212,7 +230,10 @@ export async function getAvailableSlots(date: string): Promise<string[]> {
       return slotStart < busyEnd && slotEnd > busyStart;
     });
 
-    if (!isBusy) {
+    // Reject slots that have already started (prevents booking in the past on today's date)
+    const isInPast = slotStart <= new Date();
+
+    if (!isBusy && !isInPast) {
       // Label shows host-local time (e.g. "02:00 PM" = 2 PM in host's timezone)
       available.push(minutesToLabel(t));
     }
@@ -228,7 +249,7 @@ export async function createCalendarEvent({
   time,
   name,
   email,
-  durationMinutes = SLOT_DURATION_MINUTES,
+  durationMinutes = DEFAULT_SLOT_MINUTES,
 }: {
   date: string;
   time: string;

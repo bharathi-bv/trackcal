@@ -1,12 +1,9 @@
 /**
- * GET /api/availability?date=YYYY-MM-DD
+ * GET /api/availability?date=YYYY-MM-DD[&event=slug]
  *
- * Returns the list of available 30-min time slots for the given date,
- * based on the host's real Google Calendar (minus any existing events).
- *
- * If Google Calendar isn't connected yet, returns slots: null so the
- * frontend can fall back to showing hardcoded default slots — useful
- * during development before OAuth is set up.
+ * Returns available time slots for the given date.
+ * If an event type slug is provided, uses that event type's settings
+ * (duration, start/end hours, slot increment). Falls back to defaults.
  *
  * Response shapes:
  *   { slots: ["09:00 AM", "09:30 AM", ...] }   — calendar connected
@@ -15,9 +12,18 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAvailableSlots } from "@/lib/google-calendar";
+import { createServerClient } from "@/lib/supabase";
+
+const DEFAULT_SETTINGS = {
+  duration: 30,
+  start_hour: 9,
+  end_hour: 17,
+  slot_increment: 30,
+};
 
 export async function GET(request: NextRequest) {
   const date = request.nextUrl.searchParams.get("date");
+  const eventSlug = request.nextUrl.searchParams.get("event");
 
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json(
@@ -33,13 +39,33 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ slots: [] });
   }
 
+  // Fetch event type settings if a slug was provided
+  let settings = DEFAULT_SETTINGS;
+  if (eventSlug) {
+    const db = createServerClient();
+    const { data: et } = await db
+      .from("event_types")
+      .select("duration, start_hour, end_hour, slot_increment")
+      .eq("slug", eventSlug)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (et) {
+      settings = {
+        duration: et.duration,
+        start_hour: et.start_hour,
+        end_hour: et.end_hour,
+        slot_increment: et.slot_increment,
+      };
+    }
+  }
+
   try {
-    const slots = await getAvailableSlots(date);
+    const slots = await getAvailableSlots(date, settings);
     return NextResponse.json({ slots });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.warn("[availability] calendar not connected, returning null:", message);
-    // Return null slots — TimeSlotSelector will fall back to hardcoded defaults
     return NextResponse.json({ slots: null, error: message });
   }
 }

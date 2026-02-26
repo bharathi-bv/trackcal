@@ -27,6 +27,7 @@ export async function POST(request: Request) {
       email,
       phone,
       notes,
+      event_slug,
       // UTM params
       utm_source,
       utm_medium,
@@ -79,11 +80,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Look up event type duration so the calendar event is the right length
+    let durationMinutes = 30;
+    if (event_slug) {
+      const { data: et } = await db
+        .from("event_types")
+        .select("duration, name")
+        .eq("slug", event_slug)
+        .maybeSingle();
+      if (et) durationMinutes = et.duration;
+    }
+
     // Attempt to create a Google Calendar event and send invite to the booker.
     // We do this AFTER saving to Supabase so a calendar API failure never
     // prevents the booking from being recorded. Non-fatal.
     try {
-      await createCalendarEvent({ date, time, name, email });
+      await createCalendarEvent({ date, time, name, email, durationMinutes });
     } catch (calErr) {
       console.warn("[bookings] calendar event skipped (not connected?):", calErr);
     }
