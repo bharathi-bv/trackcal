@@ -15,7 +15,7 @@ export default async function SettingsPage() {
   const db = createServerClient();
   const { data: hostSettings } = await db
     .from("host_settings")
-    .select("google_refresh_token, host_name, profile_photo_url")
+    .select("google_refresh_token, host_name, profile_photo_url, weekly_availability")
     .limit(1)
     .maybeSingle();
 
@@ -39,7 +39,9 @@ export default async function SettingsPage() {
           initial={{
             host_name: hostSettings?.host_name ?? null,
             profile_photo_url: hostSettings?.profile_photo_url ?? null,
+            weekly_availability: hostSettings?.weekly_availability ?? null,
           }}
+          googleAvatarUrl={(user.user_metadata?.avatar_url as string | undefined) ?? null}
         />
       </main>
     </div>

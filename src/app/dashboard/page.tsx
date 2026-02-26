@@ -11,6 +11,7 @@ import { createAuthServerClient } from "@/lib/supabase-server";
 import { createServerClient } from "@/lib/supabase";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import CsvExportButton from "@/components/dashboard/CsvExportButton";
+import BookingStatusSelect from "@/components/dashboard/BookingStatusSelect";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,30 +39,49 @@ type FilterParams = {
   date_to?: string;
   source?: string;
   campaign?: string;
+  status?: string;
+  q?: string;
 };
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="card" style={{ padding: "var(--space-6)" }}>
-      <span style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500 }}>
+    <div className="card" style={{ padding: "var(--space-5) var(--space-6)" }}>
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: "0.10em",
+          textTransform: "uppercase",
+          color: "var(--text-tertiary)",
+          display: "block",
+        }}
+      >
         {label}
       </span>
       <span
         style={{
           display: "block",
-          fontSize: 36,
+          fontSize: 30,
           fontWeight: 800,
           color: "var(--text-primary)",
           lineHeight: 1.1,
           marginTop: "var(--space-2)",
+          letterSpacing: "-0.03em",
         }}
       >
         {value}
       </span>
       {sub && (
-        <span style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: "var(--space-1)", display: "block" }}>
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-tertiary)",
+            marginTop: "var(--space-1)",
+            display: "block",
+          }}
+        >
           {sub}
         </span>
       )}
@@ -90,27 +110,27 @@ function SourceChart({ sourceCounts }: { sourceCounts: Record<string, number> })
 
   return (
     <div className="card" style={{ padding: "var(--space-6)", marginBottom: "var(--space-6)" }}>
-      <span
-        style={{
-          fontSize: 13,
-          color: "var(--text-secondary)",
-          fontWeight: 500,
-          display: "block",
-          marginBottom: "var(--space-5)",
-        }}
-      >
-        Bookings by Source
-      </span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-5)" }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--text-tertiary)" }}>
+          Bookings by Source
+        </span>
+        <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+          {entries.length} source{entries.length !== 1 ? "s" : ""}
+        </span>
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
         {entries.map(([source, count]) => (
-          <div key={source} style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+          <div key={source} style={{ display: "flex", alignItems: "center", gap: "var(--space-4)" }}>
             <span
               style={{
-                width: 90,
-                fontSize: 13,
+                width: 88,
+                fontSize: 12,
                 color: "var(--text-primary)",
-                fontWeight: 500,
+                fontWeight: 600,
                 flexShrink: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
             >
               {source}
@@ -119,26 +139,27 @@ function SourceChart({ sourceCounts }: { sourceCounts: Record<string, number> })
               style={{
                 flex: 1,
                 background: "var(--surface-subtle)",
-                borderRadius: "var(--radius-sm)",
+                borderRadius: "var(--radius-full)",
                 overflow: "hidden",
-                border: "1px solid var(--border-default)",
+                height: 8,
               }}
             >
               <div
                 style={{
-                  width: `${Math.max((count / max) * 100, 4)}%`,
-                  background: "var(--blue-400)",
-                  height: 24,
-                  borderRadius: "var(--radius-sm)",
+                  width: `${Math.max((count / max) * 100, 3)}%`,
+                  background: "linear-gradient(90deg, var(--blue-400), var(--blue-300))",
+                  height: "100%",
+                  borderRadius: "var(--radius-full)",
+                  transition: "width 0.4s ease",
                 }}
               />
             </div>
             <span
               style={{
-                width: 24,
-                fontSize: 13,
-                fontWeight: 600,
-                color: "var(--text-secondary)",
+                minWidth: 28,
+                fontSize: 12,
+                fontWeight: 700,
+                color: "var(--text-primary)",
                 textAlign: "right",
                 flexShrink: 0,
               }}
@@ -187,8 +208,25 @@ export default async function DashboardPage({
     filtered = filtered.filter((b) =>
       b.utm_campaign?.toLowerCase().includes(params.campaign!.toLowerCase())
     );
+  if (params.status) filtered = filtered.filter((b) => b.status === params.status);
+  if (params.q) {
+    const q = params.q.toLowerCase();
+    filtered = filtered.filter(
+      (b) =>
+        b.name.toLowerCase().includes(q) ||
+        b.email.toLowerCase().includes(q) ||
+        (b.utm_campaign ?? "").toLowerCase().includes(q)
+    );
+  }
 
-  const hasFilters = !!(params.date_from || params.date_to || params.source || params.campaign);
+  const hasFilters = !!(
+    params.date_from ||
+    params.date_to ||
+    params.source ||
+    params.campaign ||
+    params.status ||
+    params.q
+  );
 
   // 4. Stats (computed from filtered set)
   const d = new Date();
@@ -200,6 +238,14 @@ export default async function DashboardPage({
     if (b.utm_source) sourceCounts[b.utm_source] = (sourceCounts[b.utm_source] ?? 0) + 1;
   });
   const topSource = Object.entries(sourceCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
+  const attributedCount = filtered.filter((b) => Boolean(b.utm_source)).length;
+  const clickIdCount = filtered.filter(
+    (b) => Boolean(b.gclid || b.fbclid || b.li_fat_id || b.ttclid || b.msclkid)
+  ).length;
+  const attributionCoverage =
+    filtered.length > 0 ? `${Math.round((attributedCount / filtered.length) * 100)}%` : "0%";
+  const clickIdCoverage =
+    filtered.length > 0 ? `${Math.round((clickIdCount / filtered.length) * 100)}%` : "0%";
 
   // Source options for filter dropdown (from all bookings, not filtered)
   const uniqueSources = [
@@ -226,19 +272,21 @@ export default async function DashboardPage({
         <div style={{ marginBottom: "var(--space-8)" }}>
           <h1
             style={{
-              fontSize: 24,
+              fontSize: 26,
               fontWeight: 800,
               color: "var(--text-primary)",
               margin: 0,
+              letterSpacing: "-0.02em",
             }}
           >
             Bookings
           </h1>
           <p
             style={{
-              fontSize: 14,
-              color: "var(--text-secondary)",
+              fontSize: 13,
+              color: "var(--text-tertiary)",
               marginTop: "var(--space-1)",
+              fontWeight: 500,
             }}
           >
             Every booking with full attribution — source, campaign, and click IDs.
@@ -250,7 +298,7 @@ export default async function DashboardPage({
           className="dashboard-stats-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: "repeat(5, 1fr)",
             gap: "var(--space-4)",
             marginBottom: "var(--space-6)",
           }}
@@ -270,6 +318,8 @@ export default async function DashboardPage({
                 : undefined
             }
           />
+          <StatCard label="Attribution Coverage" value={attributionCoverage} sub={`${attributedCount} with source`} />
+          <StatCard label="Click ID Capture" value={clickIdCoverage} sub={`${clickIdCount} with click id`} />
         </div>
 
         {/* Source chart — only renders when attribution data exists */}
@@ -365,6 +415,34 @@ export default async function DashboardPage({
                 />
               </div>
 
+              <div className="form-field" style={{ margin: 0, minWidth: 150 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>Status</label>
+                <select
+                  name="status"
+                  className="select"
+                  style={{ height: 34, fontSize: 13 }}
+                  defaultValue={params.status ?? ""}
+                >
+                  <option value="">All statuses</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="pending">Pending</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="no_show">No Show</option>
+                </select>
+              </div>
+
+              <div className="form-field" style={{ margin: 0, minWidth: 170 }}>
+                <label className="form-label" style={{ fontSize: 11 }}>Search</label>
+                <input
+                  type="text"
+                  name="q"
+                  className="input"
+                  style={{ height: 34, fontSize: 13 }}
+                  placeholder="Name, email, campaign"
+                  defaultValue={params.q ?? ""}
+                />
+              </div>
+
               <div style={{ display: "flex", gap: "var(--space-2)", paddingBottom: 1 }}>
                 <button type="submit" className="btn btn-primary btn-sm">
                   Filter
@@ -414,13 +492,7 @@ export default async function DashboardPage({
                         <ClickIdCell booking={b} />
                       </td>
                       <td>
-                        <span
-                          className={`badge ${
-                            b.status === "confirmed" ? "badge-green" : "badge-amber"
-                          }`}
-                        >
-                          {b.status}
-                        </span>
+                        <BookingStatusSelect bookingId={b.id} status={b.status} />
                       </td>
                     </tr>
                   ))}

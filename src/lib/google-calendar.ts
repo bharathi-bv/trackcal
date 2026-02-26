@@ -30,6 +30,10 @@ type SlotSettings = {
   start_hour: number;
   end_hour: number;
   slot_increment: number;
+  min_notice_hours?: number;
+  max_days_in_advance?: number;
+  buffer_before_minutes?: number;
+  buffer_after_minutes?: number;
 };
 
 // ── OAuth client factory ────────────────────────────────────────────────────
@@ -174,7 +178,7 @@ export async function getAvailableSlots(
     end_hour: DEFAULT_END_HOUR,
     slot_increment: DEFAULT_SLOT_MINUTES,
   }
-): Promise<string[]> {
+): Promise<{ slots: string[]; hostTimezone: string }> {
   const auth = await getAuthedClient();
   const calendar = google.calendar({ version: "v3", auth });
 
@@ -222,16 +226,24 @@ export async function getAvailableSlots(
   ) {
     const slotStart = new Date(localMidnight.getTime() + t * 60 * 1000);
     const slotEnd = new Date(slotStart.getTime() + settings.duration * 60 * 1000);
+    const minNoticeMs = (settings.min_notice_hours ?? 0) * 60 * 60 * 1000;
+    const earliestAllowed = new Date(Date.now() + minNoticeMs);
 
     // freebusy busy[] are UTC Date objects — slotStart/slotEnd are also UTC → aligned
     const isBusy = busy.some((b) => {
       const busyStart = new Date(b.start!);
       const busyEnd = new Date(b.end!);
-      return slotStart < busyEnd && slotEnd > busyStart;
+      const slotStartWithBuffer = new Date(
+        slotStart.getTime() - (settings.buffer_before_minutes ?? 0) * 60 * 1000
+      );
+      const slotEndWithBuffer = new Date(
+        slotEnd.getTime() + (settings.buffer_after_minutes ?? 0) * 60 * 1000
+      );
+      return slotStartWithBuffer < busyEnd && slotEndWithBuffer > busyStart;
     });
 
     // Reject slots that have already started (prevents booking in the past on today's date)
-    const isInPast = slotStart <= new Date();
+    const isInPast = slotStart <= earliestAllowed;
 
     if (!isBusy && !isInPast) {
       // Label shows host-local time (e.g. "02:00 PM" = 2 PM in host's timezone)
@@ -239,7 +251,7 @@ export async function getAvailableSlots(
     }
   }
 
-  return available;
+  return { slots: available, hostTimezone: tz };
 }
 
 // ── Create a Google Calendar event and send invites ────────────────────────
@@ -250,12 +262,18 @@ export async function createCalendarEvent({
   name,
   email,
   durationMinutes = DEFAULT_SLOT_MINUTES,
+  summary,
+  description,
+  location,
 }: {
   date: string;
   time: string;
   name: string;
   email: string;
   durationMinutes?: number;
+  summary?: string;
+  description?: string;
+  location?: string;
 }): Promise<void> {
   const auth = await getAuthedClient();
   const calendar = google.calendar({ version: "v3", auth });
@@ -279,15 +297,24 @@ export async function createCalendarEvent({
   const endDt = new Date(startDt.getTime() + durationMinutes * 60 * 1000);
 
   // sendUpdates: "all" → Google emails calendar invites to all attendees
+  // conferenceDataVersion: 1 → instructs Google to create a Meet link automatically
   await calendar.events.insert({
     calendarId: "primary",
     sendUpdates: "all",
+    conferenceDataVersion: 1,
     requestBody: {
-      summary: `30-Minute Discovery Call with ${name}`,
+      summary: summary || `30-Minute Discovery Call with ${name}`,
       start: { dateTime: startDt.toISOString(), timeZone: tz },
       end: { dateTime: endDt.toISOString(), timeZone: tz },
       attendees: [{ email, displayName: name }],
-      description: `Booked via TrackCal.\n\nAttendee: ${name} <${email}>`,
+      description: description || `Booked via TrackCal.\n\nAttendee: ${name} <${email}>`,
+      ...(location ? { location } : {}),
+      conferenceData: {
+        createRequest: {
+          requestId: `trackcal-${Date.now()}`,
+          conferenceSolutionKey: { type: "hangoutsMeet" },
+        },
+      },
     },
   });
 }

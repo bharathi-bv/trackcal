@@ -4,6 +4,7 @@ import * as React from "react";
 import { useBookingStore } from "@/store/bookingStore";
 import DetailsForm from "@/components/booking/DetailsForm";
 import ThreeDaySlotPicker from "@/components/booking/ThreeDaySlotPicker";
+import TimezonePicker from "@/components/booking/TimezonePicker";
 import { trackBookingStarted, trackBookingCompleted } from "@/lib/analytics";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -37,26 +38,6 @@ function buildCalendarGrid(year: number, month: number) {
   return cells;
 }
 
-// ── Common timezones ───────────────────────────────────────────────────────
-
-const COMMON_TIMEZONES = [
-  { iana: "America/Los_Angeles", label: "Pacific Time (PT)" },
-  { iana: "America/Denver", label: "Mountain Time (MT)" },
-  { iana: "America/Chicago", label: "Central Time (CT)" },
-  { iana: "America/New_York", label: "Eastern Time (ET)" },
-  { iana: "America/Sao_Paulo", label: "Brasília Time (BRT)" },
-  { iana: "Europe/London", label: "London (GMT/BST)" },
-  { iana: "Europe/Paris", label: "Central European (CET)" },
-  { iana: "Europe/Berlin", label: "Berlin (CET/CEST)" },
-  { iana: "Asia/Dubai", label: "Gulf Time (GST, UTC+4)" },
-  { iana: "Asia/Kolkata", label: "India Standard Time (IST)" },
-  { iana: "Asia/Bangkok", label: "Indochina Time (ICT)" },
-  { iana: "Asia/Singapore", label: "Singapore Time (SGT)" },
-  { iana: "Asia/Tokyo", label: "Japan Standard Time (JST)" },
-  { iana: "Australia/Sydney", label: "Sydney (AEST/AEDT)" },
-  { iana: "Pacific/Auckland", label: "New Zealand (NZST)" },
-];
-
 // ── Step header ────────────────────────────────────────────────────────────
 
 const STEP_META: Record<number, { label: string }> = {
@@ -73,11 +54,6 @@ function LeftPanel({
   description,
   hostName,
   hostPhotoUrl,
-  selectedTimezone,
-  timezoneLabel,
-  currentTimeDisplay,
-  timezoneOptions,
-  onTimezoneChange,
   // Mini calendar injected here in step 1
   calendarContent,
   // shown only in step 2
@@ -90,11 +66,6 @@ function LeftPanel({
   description?: string | null;
   hostName?: string | null;
   hostPhotoUrl?: string | null;
-  selectedTimezone: string;
-  timezoneLabel: string;
-  currentTimeDisplay: string;
-  timezoneOptions: { iana: string; label: string }[];
-  onTimezoneChange: (tz: string) => void;
   calendarContent?: React.ReactNode;
   selectedDate?: string | null;
   selectedTime?: string | null;
@@ -150,7 +121,21 @@ function LeftPanel({
         ) : hostName ? (
           initial
         ) : (
-          "📅"
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
         )}
       </div>
 
@@ -199,60 +184,6 @@ function LeftPanel({
           {calendarContent}
         </>
       )}
-
-      {/* ── Timezone — Calendly-style compact selector ── */}
-      <div style={{ position: "relative" }}>
-        {/* Styled display layer (pointer-events:none so the select underneath receives clicks) */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-2)",
-            padding: "var(--space-2) var(--space-3)",
-            border: "1px solid var(--border-default)",
-            borderRadius: "var(--radius-md)",
-            pointerEvents: "none",
-          }}
-        >
-          <span style={{ fontSize: 14 }}>🌐</span>
-          <span
-            style={{
-              flex: 1,
-              fontSize: 12,
-              fontWeight: 500,
-              color: "var(--text-primary)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {timezoneLabel}
-          </span>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)", flexShrink: 0 }}>
-            {currentTimeDisplay}
-          </span>
-          <span style={{ fontSize: 10, color: "var(--text-tertiary)" }}>▾</span>
-        </div>
-        {/* Transparent native select handles the click / open */}
-        <select
-          style={{
-            position: "absolute",
-            inset: 0,
-            opacity: 0,
-            cursor: "pointer",
-            width: "100%",
-            height: "100%",
-          }}
-          value={selectedTimezone}
-          onChange={(e) => onTimezoneChange(e.target.value)}
-        >
-          {timezoneOptions.map((tz) => (
-            <option key={tz.iana} value={tz.iana}>
-              {tz.label}
-            </option>
-          ))}
-        </select>
-      </div>
 
       {/* ── Step 2: show the locked-in date + time ── */}
       {step === 2 && selectedDate && selectedTime && (
@@ -387,21 +318,19 @@ function InlineCalendar({
           const isPast = date < today;
           const isToday = date.getTime() === today.getTime();
           const isSelected = selectedDate === iso;
-          const isWeekday = date.getDay() !== 0 && date.getDay() !== 6;
-          const hasSlot = !isPast && isWeekday;
+          const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
           let cls = "cal-day";
-          if (isPast) cls += " cal-day-disabled";
+          if (isPast || isWeekend) cls += " cal-day-disabled";
           else if (isSelected) cls += " cal-day-selected";
           else if (isToday) cls += " cal-day-today";
-          else if (hasSlot) cls += " cal-day-has-slot";
 
           return (
             <button
               key={iso}
               className={cls}
-              onClick={() => !isPast && onSelect(iso)}
-              disabled={isPast}
+              onClick={() => !isPast && !isWeekend && onSelect(iso)}
+              disabled={isPast || isWeekend}
               aria-label={iso}
               aria-pressed={isSelected}
             >
@@ -457,7 +386,6 @@ export default function BookingWizard({
   });
 
   const [selectedTimezone, setSelectedTimezone] = React.useState("UTC");
-  const [now, setNow] = React.useState(() => new Date());
 
   React.useEffect(() => {
     try {
@@ -466,39 +394,7 @@ export default function BookingWizard({
     } catch {
       // keep UTC
     }
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
   }, []);
-
-  // Timezone options — add detected tz at top if not in common list
-  const timezoneOptions = React.useMemo(() => {
-    const inList = COMMON_TIMEZONES.some((tz) => tz.iana === selectedTimezone);
-    if (inList) return COMMON_TIMEZONES;
-    return [
-      { iana: selectedTimezone, label: selectedTimezone.replace(/_/g, " ") },
-      ...COMMON_TIMEZONES,
-    ];
-  }, [selectedTimezone]);
-
-  const timezoneLabel = React.useMemo(
-    () =>
-      COMMON_TIMEZONES.find((tz) => tz.iana === selectedTimezone)?.label ??
-      selectedTimezone.replace(/_/g, " "),
-    [selectedTimezone]
-  );
-
-  const currentTimeDisplay = React.useMemo(() => {
-    try {
-      return now.toLocaleTimeString("en-US", {
-        timeZone: selectedTimezone,
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
-    } catch {
-      return now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-    }
-  }, [now, selectedTimezone]);
 
   // Fire "booking_started" once on mount
   React.useEffect(() => {
@@ -576,11 +472,6 @@ export default function BookingWizard({
         description={eventType?.description}
         hostName={hostProfile?.host_name}
         hostPhotoUrl={hostProfile?.profile_photo_url}
-        selectedTimezone={selectedTimezone}
-        timezoneLabel={timezoneLabel}
-        currentTimeDisplay={currentTimeDisplay}
-        timezoneOptions={timezoneOptions}
-        onTimezoneChange={setSelectedTimezone}
         calendarContent={
           step === 1 ? (
             <InlineCalendar
@@ -608,18 +499,44 @@ export default function BookingWizard({
           minWidth: 0,
         }}
       >
-        {/* Step header */}
-        <span
+        {/* Step header — label left, timezone picker right (step 1 only) */}
+        <div
           style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-            color: "var(--text-tertiary)",
-            textTransform: "uppercase" as const,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "var(--space-3)",
           }}
         >
-          {meta.label}
-        </span>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              color: "var(--text-tertiary)",
+              textTransform: "uppercase" as const,
+            }}
+          >
+            {meta.label}
+          </span>
+          {step === 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  color: "var(--text-tertiary)",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Time shown in
+              </span>
+              <TimezonePicker value={selectedTimezone} onChange={setSelectedTimezone} />
+            </div>
+          )}
+        </div>
 
         {/* ── Step 1: 3-day slot picker (calendar is now in left panel) ── */}
         {step === 1 && (
@@ -632,6 +549,7 @@ export default function BookingWizard({
               end_hour={eventType?.end_hour ?? 17}
               slot_increment={eventType?.slot_increment ?? 30}
               duration={eventType?.duration ?? 30}
+              viewerTimezone={selectedTimezone}
             />
 
             <button

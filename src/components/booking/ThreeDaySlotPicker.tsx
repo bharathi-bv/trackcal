@@ -1,16 +1,19 @@
 "use client";
 
 /**
- * ThreeDaySlotPicker — rebuilt with absolute-overlay blocks
+ * ThreeDaySlotPicker — now shows 5 days side-by-side.
  *
- * Key fixes vs previous version:
- * 1. Blocked stripes: rendered as column-level position:absolute overlays so
- *    the repeating-linear-gradient is one continuous block — no cuts at row
- *    boundaries when slot_increment < 60.
- * 2. Time labels: hour marks show time on line 1 ("09:00") + AM/PM on line 2.
- *    Uniform across all rows — no inconsistent wrapping.
- * 3. Grey flash: slots are cached by ISO date key; slotsMap is never cleared
- *    on navigation — only days not yet in cache trigger a fetch.
+ * Timezone behaviour:
+ *   - The API returns slot times in the HOST's local timezone (e.g. "09:00 AM IST")
+ *     plus the host's IANA timezone key.
+ *   - The component receives the VIEWER's selected timezone (`viewerTimezone`).
+ *   - Time index labels and hover/selected overlays both show the CONVERTED time
+ *     in the viewer's timezone so the grid always reflects the timezone they chose.
+ *   - The stored/clicked value stays as the host-TZ string ("09:00 AM") because
+ *     that's what the backend needs to create the calendar event correctly.
+ *
+ * Stripe fix: blocked ranges are column-level position:absolute overlays so the
+ * repeating-linear-gradient is one continuous block, not per-row cuts.
  */
 
 import * as React from "react";
@@ -18,6 +21,7 @@ import { useBookingStore } from "@/store/bookingStore";
 
 const HOUR_HEIGHT = 48; // px per visual hour
 const LABEL_WIDTH = 52; // px for time-label column
+const DAY_COUNT = 5;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -36,8 +40,50 @@ function minsToLabel(totalMins: number): string {
   return `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${period}`;
 }
 
+/**
+ * Convert a host-TZ slot (date + minutes-from-midnight) to a display string
+ * in the viewer's timezone.
+ *
+ * Works by:
+ *   1. Computing host-TZ midnight as a UTC timestamp (using locale trick for DST safety)
+ *   2. Adding totalMins to get the slot's UTC instant
+ *   3. Formatting that UTC instant in the viewer's timezone
+ *
+ * Returns the original minsToLabel fallback if anything throws.
+ */
+function slotToViewerTime(
+  dateISO: string,
+  totalMins: number,
+  hostTimezone: string,
+  viewerTimezone: string
+): string {
+  if (hostTimezone === viewerTimezone) return minsToLabel(totalMins);
+  try {
+    const ref = new Date(`${dateISO}T12:00:00Z`);
+    const utcTs = new Date(ref.toLocaleString("en-US", { timeZone: "UTC" })).getTime();
+    const hostTs = new Date(ref.toLocaleString("en-US", { timeZone: hostTimezone })).getTime();
+    const hostOffsetMs = hostTs - utcTs; // positive for UTC+ zones
+
+    // Host midnight as UTC timestamp
+    const hostMidnightUTC =
+      new Date(`${dateISO}T00:00:00Z`).getTime() - hostOffsetMs;
+    const slotUTC = new Date(hostMidnightUTC + totalMins * 60 * 1000);
+
+    // Format in viewer timezone — drop :00 for whole hours (e.g. "9 AM" not "9:00 AM")
+    const full = slotUTC.toLocaleTimeString("en-US", {
+      timeZone: viewerTimezone,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+    return full.replace(/:00 /, " "); // "9:00 AM" → "9 AM", "3:30 AM" unchanged
+  } catch {
+    return minsToLabel(totalMins);
+  }
+}
+
 type RowEntry = {
-  timeStr: string;
+  timeStr: string; // host-TZ label, stored on click ("09:00 AM")
   totalMins: number;
   isHour: boolean;
   isHalfHour: boolean;
@@ -57,9 +103,9 @@ function buildRows(start_hour: number, end_hour: number, slot_increment: number)
   return rows;
 }
 
-function getThreeDays(anchor: string): string[] {
+function getDays(anchor: string): string[] {
   const base = new Date(anchor + "T00:00:00");
-  return [0, 1, 2].map((offset) => {
+  return Array.from({ length: DAY_COUNT }, (_, offset) => {
     const d = new Date(base);
     d.setDate(d.getDate() + offset);
     return toISODate(d);
@@ -79,15 +125,14 @@ function formatDayHeader(iso: string) {
 
 function formatRange(days: string[]): string {
   const fmt = (iso: string) =>
-    new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
   return `${fmt(days[0])} – ${fmt(days[days.length - 1])}`;
 }
 
-/**
- * Compute contiguous ranges of unavailable rows for column-level hatched overlays.
- * A row is "covered" (treated as available space) if it falls within the duration
- * window of an available starting slot.
- */
+/** Compute contiguous unavailable row ranges for column-level hatched overlays. */
 function computeUnavailableBlocks(
   allRows: RowEntry[],
   daySlots: string[],
@@ -98,9 +143,6 @@ function computeUnavailableBlocks(
 
   for (let i = 0; i < allRows.length; i++) {
     let isCovered = daySlots.includes(allRows[i].timeStr);
-
-    // If not a direct start slot, check if it's within the duration window
-    // of a preceding available start slot.
     if (!isCovered) {
       for (let si = Math.max(0, i - rowsPerDuration + 1); si < i; si++) {
         if (daySlots.includes(allRows[si].timeStr)) {
@@ -109,7 +151,6 @@ function computeUnavailableBlocks(
         }
       }
     }
-
     if (!isCovered) {
       if (blockStart === -1) blockStart = i;
     } else {
@@ -119,9 +160,7 @@ function computeUnavailableBlocks(
       }
     }
   }
-  if (blockStart !== -1) {
-    blocks.push({ startIdx: blockStart, endIdx: allRows.length });
-  }
+  if (blockStart !== -1) blocks.push({ startIdx: blockStart, endIdx: allRows.length });
   return blocks;
 }
 
@@ -135,6 +174,7 @@ export default function ThreeDaySlotPicker({
   end_hour = 17,
   slot_increment = 30,
   duration = 30,
+  viewerTimezone = "UTC",
 }: {
   anchorDate: string;
   onAnchorChange: (iso: string) => void;
@@ -143,16 +183,16 @@ export default function ThreeDaySlotPicker({
   end_hour?: number;
   slot_increment?: number;
   duration?: number;
+  viewerTimezone?: string;
 }) {
   const { selectedDate, selectedTime, setDate, setTime } = useBookingStore();
 
-  // slotsMap is a cache — never cleared on navigate (prevents grey flash)
   const [slotsMap, setSlotsMap] = React.useState<Record<string, string[]>>({});
   const [loadingSet, setLoadingSet] = React.useState<Set<string>>(new Set());
+  const [hostTimezone, setHostTimezone] = React.useState<string>("UTC");
   const [hover, setHover] = React.useState<{ day: string; rowIdx: number } | null>(null);
   const [now, setNow] = React.useState<Date>(() => new Date());
 
-  // Track which days have been fetched (ref = synchronous, no stale closure issue)
   const fetchedDaysRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
@@ -160,7 +200,6 @@ export default function ThreeDaySlotPicker({
     return () => clearInterval(id);
   }, []);
 
-  // 1 visual hour = HOUR_HEIGHT; each slot row is proportionally sized
   const ROW_HEIGHT = Math.max(20, Math.round((HOUR_HEIGHT * slot_increment) / 60));
   const rowsPerDuration = Math.max(1, Math.round(duration / slot_increment));
 
@@ -169,7 +208,7 @@ export default function ThreeDaySlotPicker({
     [start_hour, end_hour, slot_increment]
   );
 
-  const days = React.useMemo(() => getThreeDays(anchorDate), [anchorDate]);
+  const days = React.useMemo(() => getDays(anchorDate), [anchorDate]);
 
   const todayISO = toISODate(new Date());
   const canGoPrev = anchorDate > todayISO;
@@ -177,7 +216,7 @@ export default function ThreeDaySlotPicker({
   function prevDays() {
     if (!canGoPrev) return;
     const base = new Date(anchorDate + "T00:00:00");
-    base.setDate(base.getDate() - 3);
+    base.setDate(base.getDate() - DAY_COUNT);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const candidate = base < today ? today : base;
@@ -186,11 +225,11 @@ export default function ThreeDaySlotPicker({
 
   function nextDays() {
     const base = new Date(anchorDate + "T00:00:00");
-    base.setDate(base.getDate() + 3);
+    base.setDate(base.getDate() + DAY_COUNT);
     onAnchorChange(toISODate(base));
   }
 
-  // Fetch availability — only for days not already in the cache
+  // Fetch availability — cache by date key, never clear (prevents grey flash on navigate)
   React.useEffect(() => {
     const uncached = days.filter((day) => !fetchedDaysRef.current.has(day));
     if (uncached.length === 0) return;
@@ -203,16 +242,18 @@ export default function ThreeDaySlotPicker({
     setHover(null);
 
     uncached.forEach((day) => {
-      fetchedDaysRef.current.add(day); // mark immediately to prevent duplicate fetches
+      fetchedDaysRef.current.add(day);
       const url = `/api/availability?date=${day}${eventSlug ? `&event=${eventSlug}` : ""}`;
       fetch(url)
         .then((r) => r.json())
-        .then((data: { slots: string[] | null }) => {
-          const fetched = Array.isArray(data.slots) ? data.slots : allRows.map((r) => r.timeStr);
+        .then((data: { slots: string[] | null; hostTimezone?: string }) => {
+          if (data.hostTimezone) setHostTimezone(data.hostTimezone);
+          const fetched = Array.isArray(data.slots)
+            ? data.slots
+            : allRows.map((r) => r.timeStr);
           setSlotsMap((prev) => ({ ...prev, [day]: fetched }));
         })
         .catch(() => {
-          // On error: treat all slots as available (graceful degradation)
           setSlotsMap((prev) => ({ ...prev, [day]: allRows.map((r) => r.timeStr) }));
         })
         .finally(() => {
@@ -236,9 +277,12 @@ export default function ThreeDaySlotPicker({
   const currentTimeTop = ((nowMins - startMins) / (endMins - startMins)) * totalGridHeight;
   const showCurrentTime = nowMins > startMins && nowMins < endMins;
 
+  // Reference date for time index conversion (use first visible day for consistency)
+  const refDateISO = days[0] ?? todayISO;
+
   return (
     <div style={{ overflowX: "auto" }}>
-      <div style={{ minWidth: 260 }}>
+      <div style={{ minWidth: 360 }}>
         {/* ── Navigation ── */}
         <div
           style={{
@@ -265,69 +309,79 @@ export default function ThreeDaySlotPicker({
           </button>
         </div>
 
-        {/* ── Day headers ── */}
-        <div style={{ display: "flex", borderBottom: "2px solid var(--border-default)" }}>
-          <div style={{ width: LABEL_WIDTH, flexShrink: 0 }} />
-          {days.map((day) => {
-            const { weekday, date, isToday } = formatDayHeader(day);
-            const isBooked = selectedDate === day;
-            const accentColor = isBooked
-              ? "var(--blue-400)"
-              : isToday
-              ? "var(--blue-500)"
-              : undefined;
-
-            return (
-              <div
-                key={day}
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: "var(--space-2) 0",
-                  gap: 2,
-                  borderLeft: "1px solid var(--border-default)",
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.07em",
-                    color: accentColor ?? "var(--text-tertiary)",
-                  }}
-                >
-                  {isToday ? "TODAY" : weekday}
-                </span>
-                <span
-                  style={{
-                    fontSize: 14,
-                    fontWeight: isBooked || isToday ? 800 : 500,
-                    color: accentColor ?? "var(--text-primary)",
-                  }}
-                >
-                  {date}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ── Slot grid ── */}
+        {/* ── Slot grid (headers sticky inside scroll container so columns always align) ── */}
         <div
-          style={{ overflowY: "auto", maxHeight: 340 }}
+          style={{ overflowY: "auto", maxHeight: 380 }}
           onMouseLeave={() => setHover(null)}
         >
+          {/* Sticky day headers — inside the scroll container to prevent scrollbar offset misalignment */}
+          <div
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 2,
+              background: "var(--surface-page)",
+              display: "flex",
+              borderBottom: "2px solid var(--border-default)",
+            }}
+          >
+            <div style={{ width: LABEL_WIDTH, flexShrink: 0 }} />
+            {days.map((day) => {
+              const { weekday, date, isToday } = formatDayHeader(day);
+              const isBooked = selectedDate === day;
+              const accentColor = isBooked
+                ? "var(--blue-400)"
+                : isToday
+                ? "var(--blue-500)"
+                : undefined;
+
+              return (
+                <div
+                  key={day}
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "var(--space-2) 0",
+                    gap: 2,
+                    borderLeft: "1px solid var(--border-default)",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: "0.07em",
+                      color: accentColor ?? "var(--text-tertiary)",
+                    }}
+                  >
+                    {isToday ? "TODAY" : weekday}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: isBooked || isToday ? 800 : 500,
+                      color: accentColor ?? "var(--text-primary)",
+                    }}
+                  >
+                    {date}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
           <div style={{ display: "flex" }}>
-            {/* ── Time label column ── */}
+            {/* ── Time label column ──
+                Shows the viewer-TZ equivalent of each host-TZ hour mark.
+                Format: "9 AM" for whole hours, "3:30 AM" for offset hours. */}
             <div style={{ width: LABEL_WIDTH, flexShrink: 0 }}>
               {allRows.map((row, rowIdx) => {
-                // Split "09:00 AM" into ["09:00", "AM"] for two-line rendering
-                const [timePart, period] = row.isHour
-                  ? minsToLabel(row.totalMins).split(" ")
-                  : ["", ""];
+                const label = row.isHour
+                  ? slotToViewerTime(refDateISO, row.totalMins, hostTimezone, viewerTimezone)
+                  : "";
 
                 return (
                   <div
@@ -335,16 +389,16 @@ export default function ThreeDaySlotPicker({
                     style={{
                       height: ROW_HEIGHT,
                       display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-end",
-                      justifyContent: "flex-start",
+                      alignItems: "flex-start",
+                      justifyContent: "flex-end",
                       paddingTop: 2,
-                      paddingRight: 8,
+                      paddingRight: 7,
                       fontSize: 9,
                       color: "var(--text-tertiary)",
                       fontWeight: 500,
                       userSelect: "none",
                       lineHeight: 1.2,
+                      whiteSpace: "nowrap",
                       borderTop:
                         rowIdx === 0
                           ? "none"
@@ -355,12 +409,7 @@ export default function ThreeDaySlotPicker({
                           : "none",
                     }}
                   >
-                    {row.isHour && (
-                      <>
-                        <span>{timePart}</span>
-                        <span>{period}</span>
-                      </>
-                    )}
+                    {label}
                   </div>
                 );
               })}
@@ -376,7 +425,6 @@ export default function ThreeDaySlotPicker({
               const selStart = selectedDate === day ? selectedRowIdx : -1;
               const overlayH = rowsPerDuration * ROW_HEIGHT;
 
-              // Column-level unavailable block overlays (continuous stripe pattern)
               const unavailableBlocks = !isLoadingDay
                 ? computeUnavailableBlocks(allRows, daySlots, rowsPerDuration)
                 : [];
@@ -390,7 +438,7 @@ export default function ThreeDaySlotPicker({
                     position: "relative",
                   }}
                 >
-                  {/* ── Row cells: grid lines + pointer events ── */}
+                  {/* Row cells — transparent bg, handle events */}
                   {allRows.map((row, rowIdx) => {
                     const isAvailable = !isLoadingDay && daySlots.includes(row.timeStr);
                     return (
@@ -398,8 +446,7 @@ export default function ThreeDaySlotPicker({
                         key={row.timeStr}
                         style={{
                           height: ROW_HEIGHT,
-                          // Loading: grey; loaded: transparent (overlays paint on top)
-                          background: isLoadingDay ? "var(--surface-subtle)" : "transparent",
+                          background: "transparent",
                           borderTop:
                             rowIdx === 0
                               ? "none"
@@ -417,16 +464,14 @@ export default function ThreeDaySlotPicker({
                         onClick={() => {
                           if (isAvailable) {
                             setDate(day);
-                            setTime(row.timeStr);
+                            setTime(row.timeStr); // store host-TZ time for backend
                           }
                         }}
                       />
                     );
                   })}
 
-                  {/* ── Unavailable blocks: column-level continuous hatched overlay ──
-                      Placed after row cells in DOM so they paint on top of transparent rows.
-                      pointerEvents:none lets hover/click pass through to row cells. */}
+                  {/* Unavailable blocks — continuous hatched overlay per column */}
                   {unavailableBlocks.map(({ startIdx, endIdx }) => (
                     <div
                       key={startIdx}
@@ -444,7 +489,7 @@ export default function ThreeDaySlotPicker({
                     />
                   ))}
 
-                  {/* ── Current time red line (today column only) ── */}
+                  {/* Current time red line (today only) */}
                   {isToday && showCurrentTime && (
                     <div
                       style={{
@@ -472,7 +517,7 @@ export default function ThreeDaySlotPicker({
                     </div>
                   )}
 
-                  {/* ── Hover overlay ── */}
+                  {/* Hover overlay — shows viewer-TZ time */}
                   {hoverStart >= 0 && selStart < 0 && (
                     <div
                       style={{
@@ -494,17 +539,32 @@ export default function ThreeDaySlotPicker({
                     >
                       {overlayH >= 20 && (
                         <span
-                          style={{ fontSize: 10, fontWeight: 600, color: "var(--blue-500)", lineHeight: 1.3 }}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            color: "var(--blue-500)",
+                            lineHeight: 1.3,
+                          }}
                         >
-                          {allRows[hoverStart]?.timeStr}
+                          {slotToViewerTime(
+                            day,
+                            allRows[hoverStart]?.totalMins ?? 0,
+                            hostTimezone,
+                            viewerTimezone
+                          )}
                           {" – "}
-                          {minsToLabel((allRows[hoverStart]?.totalMins ?? 0) + duration)}
+                          {slotToViewerTime(
+                            day,
+                            (allRows[hoverStart]?.totalMins ?? 0) + duration,
+                            hostTimezone,
+                            viewerTimezone
+                          )}
                         </span>
                       )}
                     </div>
                   )}
 
-                  {/* ── Selected overlay ── */}
+                  {/* Selected overlay — shows viewer-TZ time */}
                   {selStart >= 0 && (
                     <div
                       style={{
@@ -526,11 +586,27 @@ export default function ThreeDaySlotPicker({
                     >
                       {overlayH >= 20 && (
                         <span
-                          style={{ fontSize: 10, fontWeight: 700, color: "white", lineHeight: 1.3 }}
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: "white",
+                            lineHeight: 1.3,
+                          }}
                         >
-                          {allRows[selStart]?.timeStr}
+                          {slotToViewerTime(
+                            day,
+                            allRows[selStart]?.totalMins ?? 0,
+                            hostTimezone,
+                            viewerTimezone
+                          )}
                           {" – "}
-                          {minsToLabel((allRows[selStart]?.totalMins ?? 0) + duration)} ✓
+                          {slotToViewerTime(
+                            day,
+                            (allRows[selStart]?.totalMins ?? 0) + duration,
+                            hostTimezone,
+                            viewerTimezone
+                          )}{" "}
+                          ✓
                         </span>
                       )}
                     </div>
@@ -559,7 +635,13 @@ export default function ThreeDaySlotPicker({
                 month: "short",
                 day: "numeric",
               })}{" "}
-              at {selectedTime}
+              at{" "}
+              {slotToViewerTime(
+                selectedDate,
+                allRows.find((r) => r.timeStr === selectedTime)?.totalMins ?? 0,
+                hostTimezone,
+                viewerTimezone
+              )}
             </span>
           </div>
         )}

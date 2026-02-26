@@ -1,6 +1,6 @@
 # TrackCal Project Context
 
-Last updated: 2026-02-25
+Last updated: 2026-02-26
 
 ## Purpose
 TrackCal is an attribution-safe scheduling app. It captures UTM/click IDs on entry and preserves them through booking conversion, then stores attribution data with each booking.
@@ -9,38 +9,72 @@ TrackCal is an attribution-safe scheduling app. It captures UTM/click IDs on ent
 - Next.js 16 (App Router)
 - React 19 + TypeScript
 - Zustand (booking state)
-- Supabase (bookings + host settings)
+- Supabase (data + auth)
 - Google Calendar API via `googleapis` (OAuth, availability, event creation)
 - Analytics: GA4 (`@next/third-parties`) + Mixpanel
 - Tailwind v4 + shadcn UI + custom TrackCal design tokens
 
+## Product Areas (Current)
+- Public booking: `/book`
+- Auth: `/auth/login`, `/auth/signup`, `/auth/callback`
+- Dashboard: `/dashboard` (bookings + attribution stats, filters, CSV export)
+- Event Types management: `/dashboard/event-types`
+- Host Settings: `/dashboard/settings`
+
 ## Main User Flow
 1. User opens booking page at `/book`.
 2. Attribution params are captured client-side (`AttributionCapture`) and stored in Zustand + localStorage (30-day expiry).
-3. User picks date/time in `BookingWizard`.
-4. `TimeSlotSelector` fetches `/api/availability?date=YYYY-MM-DD`.
-5. User enters details in `DetailsForm`.
-6. Booking submit calls `POST /api/bookings` with details + attribution.
-7. API writes to Supabase and attempts Google Calendar event creation.
-8. UI moves to confirmation state (`step === 4`), analytics conversion event fires.
+3. `/book` server-loads optional event type (`?event=slug`) and host profile from Supabase.
+4. User picks date/time in `BookingWizard` using `ThreeDaySlotPicker` + mini calendar.
+5. Slot availability is fetched via `/api/availability?date=YYYY-MM-DD[&event=slug]`.
+6. Event-type settings (duration, start/end hours, slot increment) drive slot generation.
+7. User enters details in `DetailsForm`.
+8. Booking submit calls `POST /api/bookings` with details + attribution + optional `event_slug`.
+9. API writes to Supabase and attempts Google Calendar event creation (duration-aware).
+10. UI moves to confirmation state (`step === 4`), analytics conversion event fires.
+
+## Booking UI Architecture (Current)
+- `BookingWizard` accepts:
+  - `eventType` (name, slug, duration, description, hours, slot increment)
+  - `hostProfile` (host name + profile image)
+- Left panel behavior:
+  - Host avatar/photo + event metadata
+  - Inline mini calendar in step 1
+  - Compact timezone selector with live local time
+  - Locked-in selected date/time card in step 2
+- Step 1 behavior:
+  - 3-day time grid (`ThreeDaySlotPicker`) with:
+    - Cached day-slot responses (prevents grey flash on navigation)
+    - Visual blocked overlays for unavailable ranges
+    - Current-time indicator
+    - Prev/next 3-day window navigation
+  - Anchor date (window control) is decoupled from selected booking date/time
+- Responsive behavior:
+  - Mobile stacks booking shell and step-1 calendar/slots sections via custom CSS classes
 
 ## Key Frontend Files
-- `src/app/book/page.tsx`: booking page entry
-- `src/components/booking/BookingWizard.tsx`: primary step flow/UI
-- `src/components/booking/TimeSlotSelector.tsx`: availability fetch + fallback slot logic
+- `src/app/book/page.tsx`: booking page entry and server-side event/host data fetch
+- `src/components/booking/BookingWizard.tsx`: primary step flow/UI and booking submit
+- `src/components/booking/ThreeDaySlotPicker.tsx`: multi-day slot grid and availability rendering
 - `src/components/booking/DetailsForm.tsx`: form validation with `react-hook-form` + Zod
 - `src/store/bookingStore.ts`: Zustand state (step/date/time/details/UTM)
 - `src/components/AttributionCapture.tsx`: UTM capture + Mixpanel init
 - `src/utils/attribution.ts`: tracked params + localStorage persistence
-- `src/app/globals.css`: global styles + design token wiring
+- `src/components/dashboard/*`: dashboard nav, event types/settings clients, CSV export
+- `src/app/globals.css`: global styles + token wiring + dashboard/booking responsive rules
 
 ## Key Backend/API Files
-- `src/app/api/availability/route.ts`: availability endpoint
-- `src/app/api/bookings/route.ts`: create/list bookings
-- `src/app/api/auth/google/route.ts`: start OAuth
-- `src/app/api/auth/google/callback/route.ts`: OAuth callback
-- `src/lib/google-calendar.ts`: OAuth URL, token exchange/persistence, freebusy sloting, event creation
-- `src/lib/supabase.ts`: browser and server clients
+- `src/app/api/availability/route.ts`: availability endpoint with optional event-type settings
+- `src/app/api/bookings/route.ts`: create/list bookings, event duration lookup, calendar event call
+- `src/app/api/event-types/route.ts`: list/create event types
+- `src/app/api/event-types/[id]/route.ts`: update/delete event type
+- `src/app/api/settings/route.ts`: get/update host profile settings
+- `src/app/api/auth/google/route.ts`: start Google Calendar OAuth
+- `src/app/api/auth/google/callback/route.ts`: Google OAuth callback
+- `src/lib/google-calendar.ts`: OAuth URL, token exchange/persistence, freebusy slots, event creation
+- `src/lib/supabase.ts`: service-role server client + browser-safe client
+- `src/lib/supabase-browser.ts`: browser auth client helper
+- `src/lib/supabase-server.ts`: server auth client helper (cookie-backed session)
 
 ## Data/State Model (High Level)
 - Booking state in Zustand:
@@ -50,7 +84,9 @@ TrackCal is an attribution-safe scheduling app. It captures UTM/click IDs on ent
   - `utmParams`: URL attribution payload
 - Supabase tables expected:
   - `bookings`: booking + attribution columns
-  - `host_settings`: stored Google OAuth tokens for host calendar
+  - `event_types`: scheduling templates (slug, duration, hours, slot increment, active)
+  - `host_settings`: Google OAuth tokens + host profile fields
+  - `auth.users` (Supabase Auth): dashboard access/session
 
 ## Environment Variables (Names Only)
 - `NEXT_PUBLIC_SUPABASE_URL`
@@ -63,11 +99,13 @@ TrackCal is an attribution-safe scheduling app. It captures UTM/click IDs on ent
 - `NEXT_PUBLIC_MIXPANEL_TOKEN`
 
 ## Known Implementation Notes
-- Availability falls back to hardcoded slots if Google Calendar is not connected.
+- Availability endpoint returns `{ slots: null }` if Google Calendar is not connected; booking UI treats this as all slots available for graceful fallback.
 - Booking insert is primary; calendar event creation is best-effort and non-fatal.
+- Calendar availability supports variable duration + slot increments and prevents past-time booking.
 - Timezone handling in calendar logic uses offset-at-date calculations and UTC comparisons.
+- `/dashboard*` routes enforce auth server-side and redirect unauthenticated users to `/auth/login`.
 - `README.md` is mostly default Next.js scaffold and does not document TrackCal specifics.
-- There are existing uncommitted changes in booking/calendar files (do not assume clean git state).
+- Check `git status` before assuming baseline state.
 
 ## Dev Commands
 - `npm run dev`
