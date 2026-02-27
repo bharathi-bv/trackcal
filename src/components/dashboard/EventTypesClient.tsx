@@ -10,6 +10,14 @@ import {
 } from "@/lib/event-type-config";
 import WeeklyAvailabilityEditor from "@/components/dashboard/WeeklyAvailabilityEditor";
 
+export type TeamMember = {
+  id: string;
+  name: string;
+  email: string;
+  photo_url: string | null;
+  google_refresh_token: string | null;
+};
+
 export type EventType = {
   id: string;
   name: string;
@@ -34,6 +42,7 @@ export type EventType = {
   weekly_availability: WeeklyAvailability | null;
   blocked_dates: string[] | null;
   is_active: boolean;
+  assigned_member_ids: string[];
 };
 
 type FormState = {
@@ -59,6 +68,7 @@ type FormState = {
   weekly_availability: WeeklyAvailability;
   use_custom_availability: boolean;
   is_active: boolean;
+  assigned_member_ids: string[];
 };
 
 type FormErrors = Partial<Record<string, string>>;
@@ -86,6 +96,7 @@ const DEFAULT_FORM: FormState = {
   weekly_availability: DEFAULT_WEEKLY_AVAILABILITY,
   use_custom_availability: false,
   is_active: true,
+  assigned_member_ids: [],
 };
 
 const DURATIONS = [15, 30, 45, 60, 90, 120];
@@ -104,13 +115,14 @@ const DAYS: Array<{ key: string; label: string }> = [
   { key: "6", label: "Sat" },
 ];
 
-type SectionKey = "basics" | "scheduling" | "availability" | "limits" | "advanced";
+type SectionKey = "basics" | "scheduling" | "availability" | "limits" | "advanced" | "team";
 const SECTION_TABS: Array<{ key: SectionKey; label: string }> = [
   { key: "basics", label: "Basics" },
   { key: "scheduling", label: "Scheduling" },
   { key: "availability", label: "Availability" },
   { key: "limits", label: "Limits" },
   { key: "advanced", label: "Advanced" },
+  { key: "team", label: "Team" },
 ];
 
 function hourLabel(h: number) {
@@ -126,10 +138,16 @@ function slugify(name: string) {
     .replace(/(^-|-$)/g, "");
 }
 
+type EventStats = { total: number; thisMonth: number; topSource: string | null };
+
 export default function EventTypesClient({
   initialEventTypes,
+  bookingStats = {},
+  availableMembers = [],
 }: {
   initialEventTypes: EventType[];
+  bookingStats?: Record<string, EventStats>;
+  availableMembers?: TeamMember[];
 }) {
   const router = useRouter();
   const [eventTypes, setEventTypes] = useState<EventType[]>(initialEventTypes);
@@ -139,6 +157,8 @@ export default function EventTypesClient({
   const [saving, setSaving] = useState(false);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [copied, setCopied] = useState<string | null>(null);
+  const [embedFor, setEmbedFor] = useState<EventType | null>(null);
+  const [embedCopied, setEmbedCopied] = useState<"script" | "iframe" | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [activeSection, setActiveSection] = useState<SectionKey>("basics");
@@ -149,6 +169,7 @@ export default function EventTypesClient({
     availability: null,
     limits: null,
     advanced: null,
+    team: null,
   });
 
   const appUrl = typeof window !== "undefined" ? window.location.origin : "";
@@ -185,6 +206,7 @@ export default function EventTypesClient({
       weekly_availability: normalizeWeeklyAvailability(et.weekly_availability ?? null),
       use_custom_availability: et.weekly_availability !== null,
       is_active: et.is_active,
+      assigned_member_ids: et.assigned_member_ids ?? [],
     });
     setFormErrors({});
     setShowModal(true);
@@ -216,6 +238,7 @@ export default function EventTypesClient({
       weekly_availability: normalizeWeeklyAvailability(et.weekly_availability ?? null),
       use_custom_availability: et.weekly_availability !== null,
       is_active: et.is_active,
+      assigned_member_ids: et.assigned_member_ids ?? [],
     });
     setFormErrors({});
     setShowModal(true);
@@ -367,6 +390,26 @@ export default function EventTypesClient({
     setCopied(slug);
     toast.success("Link copied");
     setTimeout(() => setCopied(null), 2000);
+  }
+
+  function buildScriptEmbedCode(slug: string) {
+    return [
+      `<script async src="${appUrl}/trackcal-embed.js" data-trackcal-url="${appUrl}"></script>`,
+      `<div data-trackcal-embed data-event="${slug}" data-height="760"></div>`,
+    ].join("\n");
+  }
+
+  function buildIframeEmbedCode(slug: string) {
+    return `<iframe src="${appUrl}/embed?event=${slug}" style="width:100%;border:0;min-height:760px;border-radius:12px;" loading="lazy" title="TrackCal Booking"></iframe>`;
+  }
+
+  async function copyEmbed(kind: "script" | "iframe", slug: string) {
+    const code =
+      kind === "script" ? buildScriptEmbedCode(slug) : buildIframeEmbedCode(slug);
+    await navigator.clipboard.writeText(code);
+    setEmbedCopied(kind);
+    toast.success(kind === "script" ? "Script embed code copied" : "Iframe code copied");
+    setTimeout(() => setEmbedCopied(null), 1800);
   }
 
   const filteredEventTypes = eventTypes.filter((et) => {
@@ -535,7 +578,43 @@ export default function EventTypesClient({
                   <a href={`/book?event=${et.slug}`} target="_blank" rel="noreferrer" className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: "2px 8px", height: "auto" }}>
                     Open ↗
                   </a>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ fontSize: 11, padding: "2px 8px", height: "auto" }}
+                    onClick={() => setEmbedFor(et)}
+                  >
+                    Embed
+                  </button>
                 </div>
+
+                {/* Stats row */}
+                {(() => {
+                  const s = bookingStats[et.slug];
+                  const total = s?.total ?? 0;
+                  return (
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-2)", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: total > 0 ? "var(--text-secondary)" : "var(--text-disabled)" }}>
+                        {total} booking{total !== 1 ? "s" : ""}
+                      </span>
+                      {s && s.thisMonth > 0 && (
+                        <>
+                          <span style={{ fontSize: 11, color: "var(--border-default)" }}>·</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--blue-500)" }}>
+                            {s.thisMonth} this month
+                          </span>
+                        </>
+                      )}
+                      {s?.topSource && (
+                        <>
+                          <span style={{ fontSize: 11, color: "var(--border-default)" }}>·</span>
+                          <span className="badge badge-default" style={{ fontSize: 10 }}>
+                            {s.topSource}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="et-card-actions" style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
@@ -872,6 +951,87 @@ export default function EventTypesClient({
               </div>
               </section>
 
+              {/* ── TEAM ── */}
+              <section ref={(el) => { sectionRefs.current.team = el; }} style={{ scrollMarginTop: 120, display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+                <h3 style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", color: "var(--text-tertiary)", margin: 0, whiteSpace: "nowrap", textTransform: "uppercase" }}>Team</h3>
+                <div style={{ flex: 1, height: 1, background: "var(--border-default)" }} />
+              </div>
+
+              {availableMembers.length === 0 ? (
+                <div style={{ padding: "var(--space-4)", background: "var(--surface-subtle)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-default)" }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", margin: 0 }}>No team members yet</p>
+                  <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "4px 0 0", fontWeight: 500 }}>
+                    Add team members in Settings → Team Members, then assign them here for round-robin scheduling.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, fontWeight: 500 }}>
+                    Select which team members can be booked for this event. Bookings rotate to whoever was least recently booked. Leave all unchecked to use single-host scheduling.
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                    {availableMembers.map((m) => {
+                      const checked = form.assigned_member_ids.includes(m.id);
+                      const calConnected = Boolean(m.google_refresh_token);
+                      return (
+                        <label
+                          key={m.id}
+                          style={{
+                            display: "flex", alignItems: "center", gap: "var(--space-3)",
+                            padding: "var(--space-3) var(--space-4)",
+                            borderRadius: "var(--radius-lg)",
+                            border: `1.5px solid ${checked ? "var(--blue-400)" : "var(--border-default)"}`,
+                            background: checked ? "var(--blue-50)" : "var(--surface-page)",
+                            cursor: "pointer",
+                            transition: "border-color 0.15s, background 0.15s",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const next = e.target.checked
+                                ? [...form.assigned_member_ids, m.id]
+                                : form.assigned_member_ids.filter((id) => id !== m.id);
+                              updateForm("assigned_member_ids", next);
+                            }}
+                            style={{ width: 14, height: 14, accentColor: "var(--blue-400)", flexShrink: 0 }}
+                          />
+                          {/* Avatar */}
+                          <div style={{
+                            width: 30, height: 30, borderRadius: "var(--radius-full)", flexShrink: 0,
+                            background: m.photo_url ? "var(--surface-subtle)" : "var(--blue-400)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 12, fontWeight: 700, color: "white", overflow: "hidden",
+                          }}>
+                            {m.photo_url
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img src={m.photo_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              : m.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{m.name}</p>
+                            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: 0, fontWeight: 500 }}>{m.email}</p>
+                          </div>
+                          {calConnected ? (
+                            <span className="badge badge-green" style={{ fontSize: 10, flexShrink: 0 }}>Calendar connected</span>
+                          ) : (
+                            <span className="badge badge-amber" style={{ fontSize: 10, flexShrink: 0 }}>No calendar — will skip</span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {form.assigned_member_ids.length === 0 && (
+                    <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: 0, fontWeight: 500 }}>
+                      No members selected — bookings will go to the single host calendar.
+                    </p>
+                  )}
+                </>
+              )}
+              </section>
+
               {formErrors._general && (
                 <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{formErrors._general}</p>
               )}
@@ -881,6 +1041,108 @@ export default function EventTypesClient({
                 <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
                   {saving ? "Saving..." : editing ? "Save changes" : "Create"}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {embedFor && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            zIndex: 60,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "var(--space-4)",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEmbedFor(null);
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              width: "min(860px, 96vw)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              padding: "var(--space-6)",
+              boxShadow: "var(--shadow-xl)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-4)" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "var(--text-primary)" }}>
+                  Embed {embedFor.name}
+                </h3>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-tertiary)" }}>
+                  Use script mode for auto-resize. Iframe mode is the simplest fallback.
+                </p>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={() => setEmbedFor(null)}>
+                Close
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
+                    Script Embed (Recommended)
+                  </span>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => copyEmbed("script", embedFor.slug)}
+                  >
+                    {embedCopied === "script" ? "✓ Copied" : "Copy code"}
+                  </button>
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: "var(--space-3)",
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--border-default)",
+                    borderRadius: "var(--radius-md)",
+                    fontSize: 12,
+                    overflowX: "auto",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <code>{buildScriptEmbedCode(embedFor.slug)}</code>
+                </pre>
+              </div>
+
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
+                    Direct Iframe
+                  </span>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => copyEmbed("iframe", embedFor.slug)}
+                  >
+                    {embedCopied === "iframe" ? "✓ Copied" : "Copy code"}
+                  </button>
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: "var(--space-3)",
+                    background: "var(--surface-subtle)",
+                    border: "1px solid var(--border-default)",
+                    borderRadius: "var(--radius-md)",
+                    fontSize: 12,
+                    overflowX: "auto",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <code>{buildIframeEmbedCode(embedFor.slug)}</code>
+                </pre>
               </div>
             </div>
           </div>

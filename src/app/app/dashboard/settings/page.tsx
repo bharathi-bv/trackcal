@@ -10,14 +10,20 @@ export default async function SettingsPage() {
     data: { user },
   } = await supabaseAuth.auth.getUser();
 
-  if (!user) redirect("/auth/login");
+  if (!user) redirect("/login");
 
   const db = createServerClient();
-  const { data: hostSettings } = await db
-    .from("host_settings")
-    .select("google_refresh_token, host_name, profile_photo_url, weekly_availability")
-    .limit(1)
-    .maybeSingle();
+  const [{ data: hostSettings }, { data: teamMembers }] = await Promise.all([
+    db
+      .from("host_settings")
+      .select("google_refresh_token, host_name, profile_photo_url, weekly_availability")
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("team_members")
+      .select("id, name, email, photo_url, is_active, google_refresh_token, last_booking_at, created_at")
+      .order("created_at", { ascending: true }),
+  ]);
 
   const calendarConnected = Boolean(hostSettings?.google_refresh_token);
 
@@ -29,6 +35,7 @@ export default async function SettingsPage() {
         email={user.email ?? ""}
       />
       <main
+        className="dashboard-main"
         style={{
           maxWidth: 1100,
           margin: "0 auto",
@@ -42,6 +49,8 @@ export default async function SettingsPage() {
             weekly_availability: hostSettings?.weekly_availability ?? null,
           }}
           googleAvatarUrl={(user.user_metadata?.avatar_url as string | undefined) ?? null}
+          initialTeamMembers={teamMembers ?? []}
+          calendarConnected={calendarConnected}
         />
       </main>
     </div>

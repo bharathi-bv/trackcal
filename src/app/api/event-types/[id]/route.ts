@@ -52,6 +52,7 @@ const patchSchema = z
       .optional(),
     blocked_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).nullable().optional(),
     is_active: z.boolean().optional(),
+    assigned_member_ids: z.array(z.string().uuid()).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "No fields provided to update");
 

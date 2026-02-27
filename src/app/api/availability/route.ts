@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getAvailableSlots } from "@/lib/google-calendar";
+import { getAvailableSlots, getTeamAvailableSlots } from "@/lib/google-calendar";
 import { createServerClient } from "@/lib/supabase";
 import { normalizeWeeklyAvailability, type WeeklyAvailability } from "@/lib/event-type-config";
 
@@ -52,12 +52,13 @@ export async function GET(request: NextRequest) {
 
   // Fetch event type settings if a slug was provided
   let settings = DEFAULT_SETTINGS;
+  let assignedMemberIds: string[] = [];
   if (eventSlug) {
     const db = createServerClient();
     const { data: etRaw } = await db
       .from("event_types")
       .select(
-        "duration, start_hour, end_hour, slot_increment, min_notice_hours, max_days_in_advance, buffer_before_minutes, buffer_after_minutes, max_bookings_per_day, max_bookings_per_slot, weekly_availability, blocked_dates"
+        "duration, start_hour, end_hour, slot_increment, min_notice_hours, max_days_in_advance, buffer_before_minutes, buffer_after_minutes, max_bookings_per_day, max_bookings_per_slot, weekly_availability, blocked_dates, assigned_member_ids"
         + ", booking_window_type, booking_window_start_date, booking_window_end_date"
       )
       .eq("slug", eventSlug)
@@ -66,6 +67,9 @@ export async function GET(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const et = etRaw as any;
+
+    // Capture assigned_member_ids for team mode (outside the if block scope)
+    assignedMemberIds = Array.isArray(et?.assigned_member_ids) ? et.assigned_member_ids : [];
 
     if (et) {
       // Use event's custom schedule if set; otherwise fall back to global host_settings schedule
@@ -147,7 +151,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { slots, hostTimezone } = await getAvailableSlots(date, settings);
+    // Team mode: if the event type has assigned members, query their calendars
+    // and return the union of free slots. Otherwise fall back to single host.
+    const { slots, hostTimezone } =
+      assignedMemberIds.length > 0
+        ? await getTeamAvailableSlots(date, settings, assignedMemberIds)
+        : await getAvailableSlots(date, settings);
+
     // Enforce per-slot cap
     if (eventSlug && settings.max_bookings_per_slot && slots.length > 0) {
       const db = createServerClient();

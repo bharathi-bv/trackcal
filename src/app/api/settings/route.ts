@@ -15,6 +15,8 @@ const settingsSchema = z.object({
   // Allow full URLs, data: URIs (file-upload base64), or empty string
   profile_photo_url: z.string().trim().max(500000).optional().or(z.literal("")).nullable(),
   weekly_availability: z.record(z.string(), z.any()).optional().nullable(),
+  // When true, clears all Google Calendar tokens for the host
+  disconnect_calendar: z.boolean().optional(),
 });
 
 export async function GET() {
@@ -65,6 +67,12 @@ export async function PUT(request: NextRequest) {
     // Only include weekly_availability in the update if it was explicitly sent
     if (weekly_availability !== undefined) {
       payload.weekly_availability = weekly_availability;
+    }
+    // Clear Google Calendar tokens if disconnect requested
+    if (parsed.data.disconnect_calendar === true) {
+      payload.google_access_token = null;
+      payload.google_refresh_token = null;
+      payload.google_token_expiry = null;
     }
 
     let error;

@@ -51,13 +51,13 @@ export default async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   // Unauthenticated user trying to reach /dashboard → login
-  if (path.startsWith("/dashboard") && !user) {
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+  if (path.startsWith("/app/") && !user) {
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   // Authenticated user visiting login/signup → send to dashboard
-  if ((path === "/auth/login" || path === "/auth/signup") && user) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+  if ((path === "/login" || path === "/signup") && user) {
+    return NextResponse.redirect(new URL("/app/dashboard", request.url));
   }
 
   return supabaseResponse;

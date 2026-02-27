@@ -495,6 +495,7 @@ export default function BookingWizard({
 
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [assignedMember, setAssignedMember] = React.useState<{ name: string; photo_url: string | null } | null>(null);
 
   // Mini calendar click: update anchor AND clear selection (user picked a new range)
   function handleCalendarClick(iso: string) {
@@ -524,6 +525,8 @@ export default function BookingWizard({
         }),
       });
       if (!res.ok) throw new Error("Booking failed");
+      const data = await res.json().catch(() => ({}));
+      setAssignedMember(data.assigned_member ?? null);
       setStep(4);
     } catch {
       setSubmitError("Something went wrong. Please try again.");
@@ -709,6 +712,61 @@ export default function BookingWizard({
             >
               You&apos;re booked!
             </h3>
+
+            {/* Assigned team member card */}
+            {assignedMember && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "var(--space-3)",
+                  background: "var(--blue-50)",
+                  border: "1px solid rgba(74,158,255,0.30)",
+                  borderRadius: "var(--radius-lg)",
+                  padding: "var(--space-4) var(--space-5)",
+                  width: "100%",
+                  maxWidth: 360,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "var(--radius-full)",
+                    background: assignedMember.photo_url ? "var(--surface-subtle)" : "var(--blue-400)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: "white",
+                    overflow: "hidden",
+                    flexShrink: 0,
+                    boxShadow: "var(--shadow-blue-sm)",
+                  }}
+                >
+                  {assignedMember.photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={assignedMember.photo_url}
+                      alt={assignedMember.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    assignedMember.name.charAt(0).toUpperCase()
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--blue-400)", margin: 0 }}>
+                    You&apos;re meeting with
+                  </p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: "2px 0 0" }}>
+                    {assignedMember.name}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <p style={{ fontSize: 14, color: "var(--text-secondary)", margin: 0 }}>
               A calendar invite is on its way to <strong>{details.email}</strong>.
             </p>

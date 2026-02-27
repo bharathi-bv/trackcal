@@ -914,5 +914,49 @@
 .delay-1 { animation-delay: 50ms; }
 .delay-2 { animation-delay: 100ms; }
 .delay-3 { animation-delay: 150ms; }
+
+/* ── Dashboard classes (desktop default) ───────────────────────────────────── */
+.dashboard-stats-grid { grid-template-columns: repeat(5, 1fr); }
+
+/* ── Mobile breakpoints ────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+
+  /* Dashboard: stats grid 5-col → 2-col */
+  .dashboard-stats-grid { grid-template-columns: repeat(2, 1fr); }
+
+  /* Dashboard: reduce page padding */
+  .dashboard-main { padding: var(--space-5) var(--space-4) !important; }
+
+  /* DashboardNav: hide email text + calendar connected label */
+  .nav-email-text { display: none; }
+  .nav-calendar-label { display: none; }
+  .nav-connect-label { display: none; }
+  .nav-connect-short { display: inline !important; }
+
+  /* DashboardNav: tighter inner padding */
+  .nav-inner-dashboard {
+    padding: 0 var(--space-4);
+    gap: var(--space-2);
+  }
+
+  /* Event type cards: stack left content + right actions vertically */
+  .et-card {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .et-card-actions {
+    width: 100%;
+    justify-content: flex-start !important;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border-default);
+    margin-top: var(--space-2);
+  }
+
+  /* Table: ensure horizontal scroll works */
+  .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Source chart: full width already, just ensure label column doesn't overflow */
+  .card { border-radius: var(--radius-lg); }
+}
 .delay-4 { animation-delay: 200ms; }
 .delay-5 { animation-delay: 250ms; }

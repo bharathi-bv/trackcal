@@ -1,9 +1,12 @@
 /**
- * /dashboard — Attribution dashboard (Phase 8 version)
+ * /app/analytics — Full attribution analytics
  *
  * Server Component: auth + data fetching server-side.
  * Filters live in URL search params — no client state needed.
  * CSV export delegates to CsvExportButton (client component).
+ *
+ * Moved here from /app/dashboard so the dashboard can be a
+ * lightweight "upcoming events" daily driver.
  */
 
 import { redirect } from "next/navigation";
@@ -175,7 +178,7 @@ function SourceChart({ sourceCounts }: { sourceCounts: Record<string, number> })
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default async function DashboardPage({
+export default async function AnalyticsPage({
   searchParams,
 }: {
   searchParams: Promise<FilterParams>;
@@ -186,7 +189,7 @@ export default async function DashboardPage({
     data: { user },
   } = await supabaseAuth.auth.getUser();
 
-  if (!user) redirect("/auth/login");
+  if (!user) redirect("/login");
 
   // 2. Fetch
   const db = createServerClient();
@@ -255,13 +258,14 @@ export default async function DashboardPage({
   return (
     <div style={{ minHeight: "100vh", background: "var(--surface-subtle)" }}>
       <DashboardNav
-        activeTab="bookings"
+        activeTab="analytics"
         calendarConnected={calendarConnected}
         email={user.email ?? ""}
       />
 
       {/* ── Main ── */}
       <main
+        className="dashboard-main"
         style={{
           maxWidth: 1100,
           margin: "0 auto",
@@ -279,7 +283,7 @@ export default async function DashboardPage({
               letterSpacing: "-0.02em",
             }}
           >
-            Bookings
+            Analytics
           </h1>
           <p
             style={{
@@ -298,7 +302,6 @@ export default async function DashboardPage({
           className="dashboard-stats-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(5, 1fr)",
             gap: "var(--space-4)",
             marginBottom: "var(--space-6)",
           }}
@@ -356,7 +359,7 @@ export default async function DashboardPage({
           >
             <form
               method="GET"
-              action="/dashboard"
+              action="/app/analytics"
               style={{
                 display: "flex",
                 flexWrap: "wrap",
@@ -448,7 +451,7 @@ export default async function DashboardPage({
                   Filter
                 </button>
                 {hasFilters && (
-                  <a href="/dashboard" className="btn btn-ghost btn-sm">
+                  <a href="/app/analytics" className="btn btn-ghost btn-sm">
                     Clear
                   </a>
                 )}
@@ -516,7 +519,7 @@ export default async function DashboardPage({
                   : "No bookings yet. Share your booking link to get started."}
               </p>
               {hasFilters ? (
-                <a href="/dashboard" className="btn btn-ghost btn-sm">
+                <a href="/app/analytics" className="btn btn-ghost btn-sm">
                   Clear filters
                 </a>
               ) : (

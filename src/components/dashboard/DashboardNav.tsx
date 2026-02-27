@@ -1,11 +1,12 @@
 import SignOutButton from "@/components/auth/SignOutButton";
 
-type Tab = "bookings" | "event-types" | "settings";
+type Tab = "bookings" | "analytics" | "event-types" | "settings";
 
 const TABS: { id: Tab; label: string; href: string }[] = [
-  { id: "bookings", label: "Bookings", href: "/dashboard" },
-  { id: "event-types", label: "Event Types", href: "/dashboard/event-types" },
-  { id: "settings", label: "Settings", href: "/dashboard/settings" },
+  { id: "bookings", label: "Bookings", href: "/app/dashboard" },
+  { id: "analytics", label: "Analytics", href: "/app/analytics" },
+  { id: "event-types", label: "Event Types", href: "/app/dashboard/event-types" },
+  { id: "settings", label: "Settings", href: "/app/dashboard/settings" },
 ];
 
 export default function DashboardNav({
@@ -28,6 +29,7 @@ export default function DashboardNav({
       }}
     >
       <div
+        className="nav-inner-dashboard"
         style={{
           maxWidth: 1100,
           margin: "0 auto",
@@ -134,7 +136,7 @@ export default function DashboardNav({
         {calendarConnected ? (
           <div style={{ display: "flex", alignItems: "center" }}>
             <span
-              className="badge badge-green"
+              className="badge badge-green nav-calendar-badge"
               style={{ fontSize: 11, gap: "var(--space-1)" }}
             >
               <span
@@ -146,13 +148,14 @@ export default function DashboardNav({
                   flexShrink: 0,
                 }}
               />
-              Calendar connected
+              <span className="nav-calendar-label">Calendar connected</span>
             </span>
           </div>
         ) : (
           <div style={{ display: "flex", alignItems: "center" }}>
-            <a href="/api/auth/google" className="btn btn-secondary btn-sm">
-              Connect Google Calendar
+            <a href="/api/auth/google" className="btn btn-secondary btn-sm nav-connect-btn">
+              <span className="nav-connect-label">Connect Google Calendar</span>
+              <span className="nav-connect-short" style={{ display: "none" }}>Connect</span>
             </a>
           </div>
         )}
@@ -175,6 +178,7 @@ export default function DashboardNav({
           }}
         >
           <span
+            className="nav-email-text"
             style={{
               fontSize: 12,
               color: "var(--text-tertiary)",

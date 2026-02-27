@@ -44,6 +44,7 @@ const eventTypeSchema = z.object({
   weekly_availability: z.record(z.string(), daySchema).optional().nullable(),
   blocked_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional().nullable(),
   is_active: z.boolean().optional().default(true),
+  assigned_member_ids: z.array(z.string().uuid()).optional().default([]),
 });
 
 function slugify(name: string) {

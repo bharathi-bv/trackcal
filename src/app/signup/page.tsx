@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { createAuthBrowserClient } from "@/lib/supabase-browser";
 
 const GoogleIcon = () => (
@@ -13,21 +12,28 @@ const GoogleIcon = () => (
   </svg>
 );
 
-export default function LoginPage() {
-  const router = useRouter();
+export default function SignupPage() {
   const supabase = createAuthBrowserClient();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [done, setDone] = React.useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        // After email confirmation, user lands here and gets a session
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
 
     if (error) {
       setError(error.message);
@@ -35,17 +41,72 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
-    router.refresh(); // clears server-side cache so dashboard sees the new session
+    // signUp succeeded — show "check your email" screen
+    setDone(true);
   }
 
-  async function handleGoogleSignIn() {
+  async function handleGoogleSignUp() {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     });
+  }
+
+  if (done) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "linear-gradient(135deg, #dce8f8 0%, #e8eef7 60%, #d8e4f4 100%)",
+          padding: "var(--space-6)",
+        }}
+      >
+        <div
+          style={{
+            background: "var(--surface-page)",
+            borderRadius: "var(--radius-xl)",
+            boxShadow: "var(--shadow-lg)",
+            padding: "var(--space-10)",
+            width: "100%",
+            maxWidth: 420,
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 48, marginBottom: "var(--space-4)" }}>📬</div>
+          <h2 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>
+            Check your email
+          </h2>
+          <p
+            style={{
+              fontSize: 14,
+              color: "var(--text-secondary)",
+              marginTop: "var(--space-3)",
+              lineHeight: 1.6,
+            }}
+          >
+            We sent a confirmation link to <strong>{email}</strong>. Click it to activate your
+            account and you&apos;ll be taken straight to your dashboard.
+          </p>
+          <a
+            href="/login"
+            style={{
+              display: "inline-block",
+              marginTop: "var(--space-6)",
+              fontSize: 14,
+              color: "var(--blue-400)",
+              fontWeight: 500,
+            }}
+          >
+            Back to sign in
+          </a>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -69,21 +130,20 @@ export default function LoginPage() {
           maxWidth: 420,
         }}
       >
-        {/* Logo */}
         <div style={{ marginBottom: "var(--space-8)" }}>
           <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>
             TrackCal
           </h1>
           <p style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: "var(--space-1)", margin: 0 }}>
-            Sign in to your account
+            Create your account
           </p>
         </div>
 
-        {/* Google sign-in */}
+        {/* Google sign-up */}
         <button
           type="button"
           className="btn btn-secondary w-full"
-          onClick={handleGoogleSignIn}
+          onClick={handleGoogleSignUp}
           style={{ justifyContent: "center", gap: "var(--space-2)" }}
         >
           <GoogleIcon />
@@ -104,7 +164,6 @@ export default function LoginPage() {
           <div style={{ flex: 1, height: 1, background: "var(--border-default)" }} />
         </div>
 
-        {/* Email / password form */}
         <form
           onSubmit={handleSubmit}
           style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}
@@ -126,9 +185,10 @@ export default function LoginPage() {
             <input
               type="password"
               className="input"
-              placeholder="••••••••"
+              placeholder="Min. 6 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              minLength={6}
               required
             />
           </div>
@@ -138,7 +198,7 @@ export default function LoginPage() {
           )}
 
           <button type="submit" className="btn btn-primary w-full" disabled={loading}>
-            {loading ? "Signing in…" : "Sign in"}
+            {loading ? "Creating account…" : "Create account"}
           </button>
         </form>
 
@@ -150,9 +210,9 @@ export default function LoginPage() {
             color: "var(--text-secondary)",
           }}
         >
-          Don&apos;t have an account?{" "}
-          <a href="/auth/signup" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
-            Sign up
+          Already have an account?{" "}
+          <a href="/login" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+            Sign in
           </a>
         </p>
       </div>
