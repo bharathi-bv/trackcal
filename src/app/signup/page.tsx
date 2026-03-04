@@ -24,7 +24,7 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
-export default function SignupPage() {
+function SignupContent() {
   const supabase = createAuthBrowserClient();
   const searchParams = useSearchParams();
 
@@ -293,5 +293,13 @@ export default function SignupPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <React.Suspense>
+      <SignupContent />
+    </React.Suspense>
   );
 }

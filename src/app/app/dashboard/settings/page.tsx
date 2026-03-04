@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { createAuthServerClient } from "@/lib/supabase-server";
 import { createServerClient } from "@/lib/supabase";
 import { getHostCalendarConnectionState } from "@/lib/calendar-connections";
@@ -49,6 +50,7 @@ export default async function SettingsPage() {
           padding: "var(--space-8) var(--space-6)",
         }}
       >
+        <Suspense>
         <SettingsClient
           initial={{
             host_name: hostSettings?.host_name ?? null,
@@ -85,6 +87,7 @@ export default async function SettingsPage() {
           sheetsConnected={Boolean((hostSettings as { sheet_refresh_token?: string | null } | null)?.sheet_refresh_token)}
           initialSheetId={(hostSettings as { sheet_id?: string | null } | null)?.sheet_id ?? null}
         />
+        </Suspense>
       </main>
     </div>
   );

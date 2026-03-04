@@ -7,6 +7,7 @@
  * If the logged-in user is not a team member (or not logged in), redirects to /auth/login.
  */
 
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createAuthServerClient } from "@/lib/supabase-server";
 import { createServerClient } from "@/lib/supabase";
@@ -55,11 +56,13 @@ export default async function MemberSettingsPage() {
   });
 
   return (
-    <MemberSettingsClient
-      member={member}
-      collectiveEvents={collectiveEvents ?? []}
-      connectedCalendars={calendarState.calendars}
-      selectedCalendarIds={calendarState.selectedCalendarIds}
-    />
+    <Suspense>
+      <MemberSettingsClient
+        member={member}
+        collectiveEvents={collectiveEvents ?? []}
+        connectedCalendars={calendarState.calendars}
+        selectedCalendarIds={calendarState.selectedCalendarIds}
+      />
+    </Suspense>
   );
 }
