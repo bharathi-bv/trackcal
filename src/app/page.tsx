@@ -277,7 +277,7 @@ export default async function LandingPage({
                 fontSize: 11, fontWeight: 600, color: "#7B6CF6",
               }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#7B6CF6", display: "inline-block" }} />
-                Scheduling for marketing &amp; sales teams
+                Marketing &amp; sales team friendly scheduling tool
               </div>
             </div>
 

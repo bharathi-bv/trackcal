@@ -24,6 +24,24 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
+const AuthNav = () => (
+  <nav style={{ padding: "16px 24px", display: "flex", alignItems: "center" }}>
+    <a href="/" style={{ display: "flex", alignItems: "center", gap: 9, textDecoration: "none" }}>
+      <div style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(135deg, #7B6CF6, #A89AF9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 2px 8px rgba(123,108,246,0.28)" }}>
+        <svg width="17" height="17" viewBox="-2 0 20 20" fill="none">
+          <path d="M14.5 5.5C13 3.7 10.8 2.5 8.2 2.5C4.5 2.5 1.5 5.5 1.5 9.5C1.5 13.5 4.5 16.5 8.2 16.5C10.8 16.5 13 15.3 14.5 13.5" stroke="white" strokeWidth="2.6" strokeLinecap="round"/>
+        </svg>
+      </div>
+      <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <span style={{ fontSize: 15, fontFamily: "var(--font-sans)", letterSpacing: "-0.01em", lineHeight: 1 }}>
+          <span style={{ fontWeight: 400, color: "#1A1A2E" }}>Cita</span><span style={{ fontWeight: 800, color: "#7B6CF6" }}>Cal</span>
+        </span>
+        <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.25)", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.05em", lineHeight: 1 }}>BETA</span>
+      </span>
+    </a>
+  </nav>
+);
+
 function SignupContent() {
   const supabase = createAuthBrowserClient();
   const searchParams = useSearchParams();
@@ -94,14 +112,15 @@ function SignupContent() {
 
   if (done) {
     return (
+      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #dce8f8 0%, #e8eef7 60%, #d8e4f4 100%)" }}>
+        <AuthNav />
       <main
         style={{
-          minHeight: "100vh",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(135deg, #dce8f8 0%, #e8eef7 60%, #d8e4f4 100%)",
           padding: "var(--space-6)",
+          paddingTop: 0,
         }}
       >
         <div
@@ -144,18 +163,20 @@ function SignupContent() {
           </a>
         </div>
       </main>
+      </div>
     );
   }
 
   return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #dce8f8 0%, #e8eef7 60%, #d8e4f4 100%)" }}>
+      <AuthNav />
     <main
       style={{
-        minHeight: "100vh",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(135deg, #dce8f8 0%, #e8eef7 60%, #d8e4f4 100%)",
         padding: "var(--space-6)",
+        paddingTop: 0,
       }}
     >
       <div
@@ -293,6 +314,7 @@ function SignupContent() {
         </p>
       </div>
     </main>
+    </div>
   );
 }
 
