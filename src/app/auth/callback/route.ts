@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAuthServerClient } from "@/lib/supabase-server";
 import { createServerClient } from "@/lib/supabase";
+import { ensureHostPublicSlug } from "@/lib/public-booking-links";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
@@ -47,6 +48,16 @@ export async function GET(request: NextRequest) {
         // Send team member to their own settings portal
         return NextResponse.redirect(new URL("/app/member/settings", request.url));
       }
+
+      await ensureHostPublicSlug({
+        db,
+        hostName:
+          user.user_metadata?.full_name ??
+          user.user_metadata?.name ??
+          user.email.split("@")[0] ??
+          null,
+        email: user.email,
+      });
     }
   }
 

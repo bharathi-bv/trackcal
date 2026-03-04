@@ -98,11 +98,13 @@ export default function BookingsDashboardClient({
   bookings,
   activeEventTypes,
   baseUrl,
+  hostPublicSlug,
   todayISO,
 }: {
   bookings: UpcomingBooking[];
   activeEventTypes: EventType[];
   baseUrl: string;
+  hostPublicSlug: string;
   todayISO: string;
 }) {
   const [selectedDate, setSelectedDate] = React.useState<string>(todayISO);
@@ -237,7 +239,7 @@ export default function BookingsDashboardClient({
               Manage
             </Link>
           </div>
-          <MeetingLinksClient eventTypes={activeEventTypes} baseUrl={baseUrl} />
+          <MeetingLinksClient eventTypes={activeEventTypes} baseUrl={baseUrl} hostPublicSlug={hostPublicSlug} />
         </div>
       </div>
 

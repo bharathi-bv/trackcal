@@ -76,9 +76,9 @@ const QuickStartContent = () => (
       { title: "Connect your calendar", body: "In Settings → Profile & Availability, click 'Connect Google'. Approve the calendar permission. CitaCal will now check your real availability and write confirmed bookings to your calendar." },
       { title: "Set your working hours", body: "Still in Settings, use the 7-day availability editor to set the days and hours you want to accept meetings. This is your global default." },
       { title: "Create a meeting link", body: "Go to Scheduling → click '+ New Page'. Name it (e.g. '30-min Demo'), choose a duration, and save. Your booking link is immediately live." },
-      { title: "Share it with UTMs attached", body: <>Your link looks like <Code>citacal.com/book?event=demo-30min</Code>. When sharing from ads, always append UTMs: <Code>?utm_source=linkedin&amp;utm_campaign=q1</Code>. CitaCal captures them automatically.</> },
+      { title: "Share it with UTMs attached", body: <>Your link looks like <Code>citacal.com/your-name/demo-30min</Code>. When sharing from ads, append UTMs after the path: <Code>?utm_source=linkedin&amp;utm_campaign=q1</Code>. CitaCal captures them automatically.</> },
     ]} />
-    <Note type="tip">If you run paid ads, CitaCal's entire value is in those UTM parameters. Always append them — and your ad platform's click IDs too (e.g. <Code>&amp;gclid=&#123;gclid&#125;</Code> for Google Ads, <Code>&amp;li_fat_id=&#123;li_fat_id&#125;</Code> for LinkedIn).</Note>
+    <Note type="tip">If you run paid ads, CitaCal&apos;s entire value is in those UTM parameters. Always append them — and your ad platform&apos;s click IDs too (e.g. <Code>&amp;gclid=&#123;gclid&#125;</Code> for Google Ads, <Code>&amp;li_fat_id=&#123;li_fat_id&#125;</Code> for LinkedIn).</Note>
   </>
 );
 
@@ -117,7 +117,7 @@ const CreateMeetingLinkContent = () => (
     <Steps steps={[
       { title: "Go to Scheduling in the top nav", body: "This is your meeting link library." },
       { title: "Click '+ New Page'", body: "A drawer opens on the right with all settings." },
-      { title: "Set the name and slug", body: <>The slug appears in the URL: <Code>/book?event=your-slug</Code>. Keep it lowercase and short, like <Code>demo-30min</Code> or <Code>intro-call</Code>.</> },
+      { title: "Set the name and slug", body: <>The slug appears after your public username, like <Code>/your-name/your-slug</Code>. Keep it lowercase and short, like <Code>demo-30min</Code> or <Code>intro-call</Code>.</> },
       { title: "Choose duration and slot frequency", body: "Duration is how long the meeting is. Slot increment controls how often slots appear — e.g. slots every 30 minutes starting from 9:00 AM." },
       { title: "Save and copy the link", body: "The link is live immediately. Copy it and add UTM parameters before sharing." },
     ]} />
@@ -204,9 +204,9 @@ ttclid          — TikTok Ads click ID
 msclkid         — Microsoft / Bing Ads click ID`}</CodeBlock>
     <H3>Make sure your ad links pass these through</H3>
     <Steps steps={[
-      { title: "Add UTM parameters to your booking link in your ad platform", body: <>Use your platform's URL builder. Result: <Code>citacal.com/book?event=demo&amp;utm_source=linkedin&amp;utm_medium=paid&amp;utm_campaign=q1-demo</Code></> },
+      { title: "Add UTM parameters to your booking link in your ad platform", body: <>Use your platform&apos;s URL builder. Result: <Code>citacal.com/your-name/demo?utm_source=linkedin&amp;utm_medium=paid&amp;utm_campaign=q1-demo</Code></> },
       { title: "Enable auto-tagging for click IDs", body: "For Google Ads, enable auto-tagging in account settings. For LinkedIn, enable the LinkedIn Insight Tag. For Meta, enable auto advanced matching." },
-      { title: "Insert the click ID parameter dynamically", body: <>Add the platform's macro to your URL. Google: <Code>&amp;gclid=&#123;gclid&#125;</Code>. LinkedIn: <Code>&amp;li_fat_id=&#123;li_fat_id&#125;</Code>. Meta: <Code>&amp;fbclid=&#123;fbclid&#125;</Code>.</> },
+      { title: "Insert the click ID parameter dynamically", body: <>Add the platform&apos;s macro to your URL. Google: <Code>&amp;gclid=&#123;gclid&#125;</Code>. LinkedIn: <Code>&amp;li_fat_id=&#123;li_fat_id&#125;</Code>. Meta: <Code>&amp;fbclid=&#123;fbclid&#125;</Code>.</> },
       { title: "Check your Attribution Coverage in Analytics", body: "The Analytics dashboard shows an 'Attribution Coverage %' KPI — what % of bookings have a known source. Aim for 90%+." },
     ]} />
     <Note type="warning">If you use a redirect or URL shortener before your booking link, test that UTM parameters survive the redirect. Many URL shorteners strip query params.</Note>
@@ -238,7 +238,7 @@ const ReadAnalyticsContent = () => (
     ]} />
     <P>All active filters combine (AND logic) and are reflected in the URL — bookmark or share filtered views.</P>
     <H3>Update a booking&apos;s status</H3>
-    <P>Click the status pill on any row in the table to update it inline. Options: confirmed, pending, cancelled, no_show. This doesn&apos;t modify the Google Calendar event — do that separately if needed.</P>
+    <P>Click the status pill on any row in the table to update it inline. Options: confirmed, pending, cancelled, no_show. Cancelling from the dashboard removes the connected calendar event and Zoom meeting when available. Other status changes update reporting and exports.</P>
     <H3>Export to CSV</H3>
     <P>Click &quot;Export CSV&quot; to download all bookings matching your current filter. The CSV includes every field: date, time, attendee name and email, phone, notes, all 10 attribution fields, status, and assigned team member. Bring this into Sheets, Looker Studio, or your data warehouse.</P>
     <H3>Understand the source breakdown chart</H3>
@@ -270,9 +270,9 @@ const SendWebhooksContent = () => (
     "notes": "Interested in the enterprise plan",
     "status": "confirmed",
     "event_slug": "demo-30min",
-    "manage_url": "https://…/manage?token=…",
-    "reschedule_url": "https://…",
-    "cancel_url": "https://…"
+    "manage_url": "https://…/manage/eyJ…",
+    "reschedule_url": "https://…/reschedule/eyJ…",
+    "cancel_url": "https://…/manage/eyJ…"
   },
   "assigned_member": { "name": "Aiden Hart", "photo_url": "…" },
   "utm": {
@@ -316,7 +316,7 @@ const AddTeamContent = () => (
       { title: "Enter their name and email", body: "CitaCal sends them an invite email via Supabase Auth." },
       { title: "They accept and connect their calendar", body: "They click the link in the email, set a password, and land on their Member Settings page where they connect their Google or Outlook calendar." },
     ]} />
-    <Note type="info">Team members each connect their own personal calendar. CitaCal checks each person's real availability before assigning them a booking.</Note>
+    <Note type="info">Team members each connect their own personal calendar. CitaCal checks each person&apos;s real availability before assigning them a booking.</Note>
     <H3>Route bookings to your team automatically</H3>
     <Steps steps={[
       { title: "Open a meeting link for editing", body: "Go to Scheduling → click edit on the meeting link you want to configure." },
@@ -348,9 +348,9 @@ const RescheduleContent = () => (
     <P>Every booking confirmation email includes a <strong>Reschedule link</strong>. When clicked:</P>
     <Ul items={[
       "The attendee sees available slots for the same meeting type",
-      "They pick a new time — this cancels the old booking and creates a new one",
-      "A new calendar event is created, the old one is removed",
-      "The reschedule link is valid for 24 hours after the original booking",
+      "They pick a new time and the existing booking moves to the new slot",
+      "The connected calendar event is updated automatically",
+      "The manage link stays valid until it expires based on your token TTL (365 days by default)",
     ]} />
     <H3>Let an attendee cancel</H3>
     <P>The confirmation also includes a <strong>Cancel link</strong>. Clicking it changes the booking status to &quot;cancelled&quot;. The calendar event is removed automatically.</P>
@@ -386,7 +386,7 @@ const baseUrl = 'https://citacal.com/embed?event=demo-30min';
 document.getElementById('citacal-frame').src = baseUrl + '&' + params.toString();`}</CodeBlock>
     <Note type="warning">A static iframe src won&apos;t capture your landing page&apos;s UTMs because browsers block cross-origin localStorage access. Always use the JS injection method above if attribution accuracy matters.</Note>
     <H3>When to use a direct link instead</H3>
-    <P>For most use cases — ad campaigns, email CTAs, LinkedIn — a direct link to <Code>citacal.com/book?event=your-slug</Code> is simpler and more reliable for attribution than embedding. The booking page is mobile-responsive and loads in under 2 seconds.</P>
+    <P>For most use cases — ad campaigns, email CTAs, LinkedIn — a direct link to <Code>citacal.com/your-name/your-slug</Code> is simpler and more reliable for attribution than embedding. The booking page is mobile-responsive and loads in under 2 seconds.</P>
   </>
 );
 

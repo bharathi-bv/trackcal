@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveAvailabilityRules } from "@/lib/availability-schedules";
+import {
+  cleanupBookingArtifacts,
+  getMemberTokensByIds,
+  getMemberTokensForAssignedBooking,
+  normalizeCalendarEvents,
+} from "@/lib/booking-calendars";
 import { createServerClient } from "@/lib/supabase";
+import { runBookingSideEffects } from "@/lib/booking-side-effects";
 import {
   createMemberCalendarEvent,
   deleteMemberCalendarEvent,
@@ -11,7 +18,6 @@ import {
 } from "@/lib/member-calendar";
 import {
   createHostCalendarEvent,
-  deleteHostCalendarEvent,
   getHostAvailableSlots,
   updateHostCalendarEvent,
 } from "@/lib/host-calendar";
@@ -32,6 +38,7 @@ import {
   getTeamAvailability,
   type TeamSchedulingMode,
 } from "@/lib/team-scheduling";
+import { updateZoomMeeting } from "@/lib/zoom";
 
 const DEFAULT_SETTINGS = {
   duration: 30,
@@ -54,6 +61,7 @@ type EventSettings = typeof DEFAULT_SETTINGS & {
 
 type BookingRow = {
   id: string;
+  created_at: string | null;
   date: string;
   time: string;
   status: string;
@@ -66,6 +74,18 @@ type BookingRow = {
   assigned_host_ids: unknown;
   calendar_event_id: string | null;
   calendar_events: unknown;
+  zoom_meeting_id: string | null;
+  custom_answers: Record<string, string | string[]> | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_term: string | null;
+  utm_content: string | null;
+  gclid: string | null;
+  fbclid: string | null;
+  li_fat_id: string | null;
+  ttclid: string | null;
+  msclkid: string | null;
   manage_token_expires_at: string | null;
 };
 
@@ -130,26 +150,6 @@ function normalizeMemberIds(value: unknown) {
   return value.filter((id): id is string => typeof id === "string" && id.length > 0);
 }
 
-function normalizeCalendarEvents(value: unknown) {
-  if (!Array.isArray(value)) return [] as Array<{ member_id: string; calendar_event_id: string }>;
-  return value.filter(
-    (
-      row
-    ): row is {
-      member_id: string;
-      calendar_event_id: string;
-    } =>
-      Boolean(
-        row &&
-          typeof row === "object" &&
-          "member_id" in row &&
-          "calendar_event_id" in row &&
-          typeof row.member_id === "string" &&
-          typeof row.calendar_event_id === "string"
-      )
-  );
-}
-
 async function loadBookingByManageToken({
   token,
   db,
@@ -161,7 +161,7 @@ async function loadBookingByManageToken({
   const { data } = await db
     .from("bookings")
     .select(
-      "id, date, time, status, name, email, phone, notes, event_slug, assigned_to, assigned_host_ids, calendar_event_id, calendar_events, manage_token_expires_at"
+      "id, created_at, date, time, status, name, email, phone, notes, event_slug, assigned_to, assigned_host_ids, calendar_event_id, calendar_events, zoom_meeting_id, custom_answers, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, li_fat_id, ttclid, msclkid, manage_token_expires_at"
     )
     .eq("manage_token_hash", hash)
     .maybeSingle();
@@ -173,52 +173,15 @@ async function loadBookingByManageToken({
   return booking;
 }
 
-async function getMemberTokensForBooking({
-  booking,
-  db,
-}: {
-  booking: BookingRow;
-  db: ReturnType<typeof createServerClient>;
-}): Promise<MemberCalendarConnection | null> {
-  if (!booking.assigned_to) return null;
-
-  const { data: member } = await db
-    .from("team_members")
-    .select(
-      "id, google_access_token, google_refresh_token, google_token_expiry, google_calendar_ids, microsoft_access_token, microsoft_refresh_token, microsoft_token_expiry, microsoft_calendar_ids"
-    )
-    .eq("id", booking.assigned_to)
-    .eq("is_active", true)
-    .maybeSingle();
-
-  if (!member?.google_refresh_token && !member?.microsoft_refresh_token) return null;
-  return member as MemberCalendarConnection;
-}
-
-async function getMemberTokensByIds({
-  memberIds,
-  db,
-}: {
-  memberIds: string[];
-  db: ReturnType<typeof createServerClient>;
-}) {
-  const normalized = [...new Set(memberIds)];
-  if (normalized.length === 0) return new Map<string, MemberCalendarConnection>();
-
-  const { data: members } = await db
-    .from("team_members")
-    .select(
-      "id, google_access_token, google_refresh_token, google_token_expiry, google_calendar_ids, microsoft_access_token, microsoft_refresh_token, microsoft_token_expiry, microsoft_calendar_ids"
-    )
-    .in("id", normalized)
-    .eq("is_active", true);
-
-  const map = new Map<string, MemberCalendarConnection>();
-  (members ?? []).forEach((member) => {
-    if (!member.google_refresh_token && !member.microsoft_refresh_token) return;
-    map.set(member.id, member as MemberCalendarConnection);
-  });
-  return map;
+function buildZoomStartTime(date: string, time: string) {
+  const [h12str, period] = time.split(" ");
+  const [hh, mm] = h12str.split(":").map(Number);
+  let hour = hh;
+  if (period === "PM" && hh !== 12) hour += 12;
+  if (period === "AM" && hh === 12) hour = 0;
+  return new Date(
+    `${date}T${String(hour).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00Z`
+  ).toISOString();
 }
 
 async function buildCalendarMetadata({
@@ -602,41 +565,31 @@ export async function PATCH(
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    const calendarEvents = normalizeCalendarEvents(booking.calendar_events);
-    if (calendarEvents.length > 0) {
-      const tokenMap = await getMemberTokensByIds({
-        memberIds: calendarEvents.map((event) => event.member_id),
-        db,
-      });
-      try {
-        await Promise.allSettled(
-          calendarEvents.map((event) => {
-            const memberTokens = tokenMap.get(event.member_id);
-            if (!memberTokens) return Promise.resolve();
-            return deleteMemberCalendarEvent({
-              eventId: event.calendar_event_id,
-              member: memberTokens,
-            });
-          })
-        );
-      } catch (calendarErr) {
-        console.warn("[manage-booking] calendar delete failed (non-fatal):", calendarErr);
-      }
-    } else if (booking.calendar_event_id) {
-      const memberTokens = await getMemberTokensForBooking({ booking, db });
-      try {
-        if (memberTokens) {
-          await deleteMemberCalendarEvent({
-            eventId: booking.calendar_event_id,
-            member: memberTokens,
-          });
-        } else {
-          await deleteHostCalendarEvent(booking.calendar_event_id);
-        }
-      } catch (calendarErr) {
-        console.warn("[manage-booking] calendar delete failed (non-fatal):", calendarErr);
-      }
+    try {
+      await cleanupBookingArtifacts({ booking, db });
+    } catch (calendarErr) {
+      console.warn("[manage-booking] calendar delete failed (non-fatal):", calendarErr);
     }
+
+    const { data: hostSettings } = await db
+      .from("host_settings")
+      .select("booking_base_url")
+      .limit(1)
+      .maybeSingle();
+    const publicBaseUrl = resolvePublicBaseUrl({
+      headers: request.headers,
+      configuredBaseUrl: hostSettings?.booking_base_url ?? null,
+    });
+
+    await runBookingSideEffects({
+      db,
+      kind: "cancelled",
+      actionUrls: buildBookingActionUrls(publicBaseUrl, token),
+      booking: {
+        ...booking,
+        status: "cancelled",
+      },
+    });
 
     return NextResponse.json({ booking: updated });
   }
@@ -705,7 +658,7 @@ export async function PATCH(
   const shouldUseCollectiveHosts = availability.collectiveHostIds.length > 0;
   const nextDate = parsed.data.date;
   const nextTime = parsed.data.time;
-  const memberTokens = await getMemberTokensForBooking({ booking, db });
+  const memberTokens = await getMemberTokensForAssignedBooking({ booking, db });
   try {
     if (shouldUseCollectiveHosts) {
       const existingTokenMap = await getMemberTokensByIds({
@@ -810,9 +763,43 @@ export async function PATCH(
         }
       }
     }
+
+    if (booking.zoom_meeting_id) {
+      await updateZoomMeeting({
+        meetingId: booking.zoom_meeting_id,
+        topic: calendarMeta.summary,
+        start_time: buildZoomStartTime(nextDate, nextTime),
+        duration: calendarMeta.durationMinutes,
+      });
+    }
   } catch (calendarErr) {
     console.warn("[manage-booking] calendar sync failed (non-fatal):", calendarErr);
   }
+
+  await runBookingSideEffects({
+    db,
+    kind: "rescheduled",
+    actionUrls,
+    changes: {
+      previous_status: booking.status,
+      previous_date: booking.date,
+      previous_time: booking.time,
+    },
+    booking: {
+      ...booking,
+      date: nextDate,
+      time: nextTime,
+      status: "confirmed",
+      assigned_to:
+        shouldUseCollectiveHosts && availability.collectiveHostIds.length > 0
+          ? availability.collectiveHostIds[0] ?? null
+          : booking.assigned_to,
+      assigned_host_ids:
+        shouldUseCollectiveHosts && availability.collectiveHostIds.length > 0
+          ? availability.collectiveHostIds
+          : booking.assigned_host_ids,
+    },
+  });
 
   return NextResponse.json({
     booking: {

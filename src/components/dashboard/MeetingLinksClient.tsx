@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { buildPublicBookingUrl } from "@/lib/public-booking-links";
 
 type EventType = {
   id: string;
@@ -13,9 +14,11 @@ type EventType = {
 export default function MeetingLinksClient({
   eventTypes,
   baseUrl,
+  hostPublicSlug,
 }: {
   eventTypes: EventType[];
   baseUrl: string;
+  hostPublicSlug: string;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const resolvedBaseUrl =
@@ -23,7 +26,7 @@ export default function MeetingLinksClient({
     (typeof window !== "undefined" ? window.location.origin : "");
 
   function handleCopy(slug: string, id: string) {
-    const url = `${resolvedBaseUrl}/book?event=${slug}`;
+    const url = buildPublicBookingUrl(resolvedBaseUrl, hostPublicSlug, slug);
     navigator.clipboard.writeText(url).then(() => {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
@@ -44,7 +47,7 @@ export default function MeetingLinksClient({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
       {eventTypes.map((et) => {
-        const url = `${resolvedBaseUrl}/book?event=${et.slug}`;
+        const url = buildPublicBookingUrl(resolvedBaseUrl, hostPublicSlug, et.slug);
         const copied = copiedId === et.id;
         return (
           <div

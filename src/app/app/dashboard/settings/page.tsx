@@ -1,14 +1,25 @@
+import { createAuthServerClient } from "@/lib/supabase-server";
 import { createServerClient } from "@/lib/supabase";
 import { getHostCalendarConnectionState } from "@/lib/calendar-connections";
+import { ensureHostPublicSlug } from "@/lib/public-booking-links";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import SettingsClient from "@/components/dashboard/SettingsClient";
 
 export default async function SettingsPage() {
+  const supabase = await createAuthServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const db = createServerClient();
-  const [{ data: hostSettings }, { data: teamMembers }, hostCalendarState, { count: activeLinksCount }] = await Promise.all([
+  const [hostPublicSlug, { data: hostSettings }, { data: teamMembers }, hostCalendarState, { count: activeLinksCount }] = await Promise.all([
+    ensureHostPublicSlug({
+      db,
+      hostName: user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? null,
+      email: user?.email ?? null,
+    }),
     db
       .from("host_settings")
-      .select("google_refresh_token, microsoft_refresh_token, google_calendar_ids, microsoft_calendar_ids, calendar_provider, host_name, profile_photo_url, booking_base_url, weekly_availability, webhook_urls, zoom_refresh_token, sheet_refresh_token, sheet_id")
+      .select("google_refresh_token, microsoft_refresh_token, google_calendar_ids, microsoft_calendar_ids, calendar_provider, host_name, public_slug, profile_photo_url, booking_base_url, weekly_availability, webhook_urls, zoom_refresh_token, sheet_refresh_token, sheet_id")
       .limit(1)
       .maybeSingle(),
     db
@@ -41,6 +52,7 @@ export default async function SettingsPage() {
         <SettingsClient
           initial={{
             host_name: hostSettings?.host_name ?? null,
+            public_slug: hostSettings?.public_slug ?? hostPublicSlug,
             profile_photo_url: hostSettings?.profile_photo_url ?? null,
             booking_base_url: hostSettings?.booking_base_url ?? null,
             webhook_urls: hostSettings?.webhook_urls ?? [],
@@ -49,6 +61,14 @@ export default async function SettingsPage() {
             microsoft_refresh_token: hostSettings?.microsoft_refresh_token ?? null,
             google_calendar_ids: hostSettings?.google_calendar_ids ?? [],
             microsoft_calendar_ids: hostSettings?.microsoft_calendar_ids ?? [],
+          }}
+          account={{
+            email: user?.email ?? "",
+            canUsePassword:
+              Array.isArray(user?.app_metadata?.providers) &&
+              user.app_metadata.providers.includes("email"),
+            authProviders:
+              Array.isArray(user?.app_metadata?.providers) ? user.app_metadata.providers : [],
           }}
           googleAvatarUrl={null}
           initialTeamMembers={teamMembers ?? []}

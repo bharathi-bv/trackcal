@@ -1,7 +1,13 @@
 import { createHmac, randomUUID } from "crypto";
 
+export type BookingWebhookEvent =
+  | "booking.confirmed"
+  | "booking.cancelled"
+  | "booking.rescheduled"
+  | "booking.status_changed";
+
 export type BookingWebhookPayload = {
-  event: "booking.confirmed";
+  event: BookingWebhookEvent;
   occurred_at: string;
   booking: {
     id: string;
@@ -36,6 +42,11 @@ export type BookingWebhookPayload = {
     ttclid: string | null;
     msclkid: string | null;
   };
+  changes?: {
+    previous_status?: string | null;
+    previous_date?: string | null;
+    previous_time?: string | null;
+  };
 };
 
 function sign(secret: string, timestamp: string, body: string) {
@@ -48,7 +59,7 @@ function uniqUrls(urls: string[]) {
   return [...new Set(urls.map((u) => u.trim()).filter(Boolean))];
 }
 
-export async function sendBookingConfirmedWebhooks({
+export async function sendBookingWebhooks({
   urls,
   payload,
   secret,
@@ -88,4 +99,12 @@ export async function sendBookingConfirmedWebhooks({
       }
     })
   );
+}
+
+export async function sendBookingConfirmedWebhooks(args: {
+  urls: string[];
+  payload: BookingWebhookPayload;
+  secret?: string | null;
+}) {
+  return sendBookingWebhooks(args);
 }

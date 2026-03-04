@@ -1,11 +1,15 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import TeamMembersTab, { type TeamMember } from "@/components/dashboard/TeamMembersTab";
+import { createAuthBrowserClient } from "@/lib/supabase-browser";
+import { slugifyPublicSegment } from "@/lib/public-booking-links";
 
 type Settings = {
   host_name: string | null;
+  public_slug?: string | null;
   profile_photo_url: string | null;
   booking_base_url?: string | null;
   webhook_urls?: unknown;
@@ -23,8 +27,15 @@ type ConnectedCalendarOption = {
   provider: "google" | "microsoft";
 };
 
+type AccountSettings = {
+  email: string;
+  canUsePassword: boolean;
+  authProviders: string[];
+};
+
 export default function SettingsClient({
   initial,
+  account,
   googleAvatarUrl,
   initialTeamMembers = [],
   calendarConnected = false,
@@ -36,6 +47,7 @@ export default function SettingsClient({
   initialSheetId = null,
 }: {
   initial: Settings;
+  account: AccountSettings;
   googleAvatarUrl?: string | null;
   initialTeamMembers?: TeamMember[];
   calendarConnected?: boolean;
@@ -48,12 +60,14 @@ export default function SettingsClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const supabase = React.useMemo(() => createAuthBrowserClient(), []);
 
   // If callback redirected with ?tab=team, open team tab automatically
   const defaultTab = searchParams.get("tab") === "team" ? "team" : "profile";
   const [activeTab, setActiveTab] = React.useState<"profile" | "team">(defaultTab);
 
   const [hostName, setHostName] = React.useState(initial.host_name ?? "");
+  const [publicSlug, setPublicSlug] = React.useState(initial.public_slug ?? "");
   const [photoUrl, setPhotoUrl] = React.useState(
     initial.profile_photo_url ?? googleAvatarUrl ?? ""
   );
@@ -78,6 +92,20 @@ export default function SettingsClient({
   const [calendarOptions] = React.useState<ConnectedCalendarOption[]>(connectedCalendars);
   const [selectedIds, setSelectedIds] = React.useState<string[]>(selectedCalendarIds);
   const [savingCalendarSelection, setSavingCalendarSelection] = React.useState(false);
+  const [showPasswordForm, setShowPasswordForm] = React.useState(false);
+  const [newPassword, setNewPassword] = React.useState("");
+  const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [savingPassword, setSavingPassword] = React.useState(false);
+  const [passwordSaved, setPasswordSaved] = React.useState(false);
+  const [passwordError, setPasswordError] = React.useState<string | null>(null);
+  const [canUsePassword, setCanUsePassword] = React.useState(account.canUsePassword);
+  const [authProviders, setAuthProviders] = React.useState(account.authProviders);
+  const [checkingPublicSlug, setCheckingPublicSlug] = React.useState(false);
+  const [publicSlugStatus, setPublicSlugStatus] = React.useState<{
+    normalized: string;
+    available: boolean;
+    reason: string | null;
+  } | null>(null);
 
   // Show "Calendar connected" toast when returning from member OAuth
   const memberConnected = searchParams.get("member_connected") === "1";
@@ -91,10 +119,72 @@ export default function SettingsClient({
     setImgError(false);
   }, [photoUrl]);
 
+  React.useEffect(() => {
+    if (!publicSlug.trim()) {
+      setPublicSlugStatus(null);
+      setCheckingPublicSlug(false);
+      return;
+    }
+
+    const normalized = slugifyPublicSegment(publicSlug);
+    if (!normalized) {
+      setPublicSlugStatus({
+        normalized: "",
+        available: false,
+        reason: "invalid",
+      });
+      setCheckingPublicSlug(false);
+      return;
+    }
+
+    setCheckingPublicSlug(true);
+    const timeout = window.setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/settings/public-slug?slug=${encodeURIComponent(normalized)}`,
+          { cache: "no-store" }
+        );
+        const data = (await res.json().catch(() => ({}))) as {
+          normalized?: string;
+          available?: boolean;
+          reason?: string | null;
+        };
+        if (!res.ok) {
+          throw new Error("Failed to check username.");
+        }
+        setPublicSlugStatus({
+          normalized: data.normalized ?? normalized,
+          available: Boolean(data.available),
+          reason: data.reason ?? null,
+        });
+      } catch {
+        setPublicSlugStatus({
+          normalized,
+          available: false,
+          reason: "error",
+        });
+      } finally {
+        setCheckingPublicSlug(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [publicSlug]);
+
   async function handleSave() {
     setSaving(true);
     setSaved(false);
     setError(null);
+    if (checkingPublicSlug) {
+      setError("Wait for the username availability check to finish.");
+      setSaving(false);
+      return;
+    }
+    if (publicSlug.trim() && publicSlugStatus && !publicSlugStatus.available) {
+      setError("Choose an available username before saving.");
+      setSaving(false);
+      return;
+    }
     const webhookUrls = webhookUrlsText
       .split(/\r?\n|,/)
       .map((s) => s.trim())
@@ -105,6 +195,7 @@ export default function SettingsClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           host_name: hostName,
+          public_slug: publicSlug.trim() || null,
           profile_photo_url: photoUrl,
           booking_base_url: bookingBaseUrl,
           webhook_urls: webhookUrls,
@@ -268,6 +359,50 @@ export default function SettingsClient({
   const displayName = hostName.trim() || "CitaCal";
   const initial_letter = displayName.charAt(0).toUpperCase();
   const showPhoto = photoUrl && !imgError;
+  const resolvedBaseUrl =
+    bookingBaseUrl.trim().replace(/\/+$/, "") ||
+    (typeof window !== "undefined" ? window.location.origin : "https://citacal.com");
+  const normalizedPublicSlug = slugifyPublicSegment(publicSlug);
+  const passwordButtonLabel = canUsePassword ? "Change password" : "Create password";
+  const passwordHelpText = canUsePassword
+    ? "Set a new password for email sign-in."
+    : "Add a password so you can also sign in with email and password.";
+
+  async function handleSavePassword() {
+    setPasswordSaved(false);
+    setPasswordError(null);
+
+    if (newPassword.length < 6) {
+      setPasswordError("Password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+
+    setSavingPassword(true);
+    const { error: updateError } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (updateError) {
+      setPasswordError(updateError.message);
+      setSavingPassword(false);
+      return;
+    }
+
+    setPasswordSaved(true);
+    setCanUsePassword(true);
+    setAuthProviders((current) =>
+      current.includes("email") ? current : [...current, "email"]
+    );
+    setShowPasswordForm(false);
+    setNewPassword("");
+    setConfirmPassword("");
+    router.refresh();
+    setSavingPassword(false);
+  }
 
   return (
     <div style={{ maxWidth: 680 }}>
@@ -355,6 +490,130 @@ export default function SettingsClient({
       {/* ── Profile & Availability tab ── */}
       {activeTab === "profile" && (
         <>
+          <div className="tc-card" style={{ padding: "var(--space-6)", marginBottom: "var(--space-5)" }}>
+            <div style={{ marginBottom: "var(--space-5)", paddingBottom: "var(--space-4)", borderBottom: "1px solid var(--border-default)" }}>
+              <h2 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", margin: 0, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                Account settings
+              </h2>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+              <div className="tc-form-field">
+                <label className="tc-form-label">Email address</label>
+                <input type="email" className="tc-input" value={account.email} disabled />
+                <p className="tc-form-hint">Used for sign-in and booking notifications for your account.</p>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "var(--space-3)",
+                  flexWrap: "wrap",
+                  padding: "var(--space-4)",
+                  borderRadius: "var(--radius-lg)",
+                  background: "var(--surface-subtle)",
+                  border: "1px solid var(--border-default)",
+                }}
+              >
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
+                    Password
+                  </p>
+                  <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
+                    {passwordHelpText}
+                  </p>
+                  {authProviders.length > 0 && (
+                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
+                      Sign-in methods connected: {authProviders.join(", ")}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="tc-btn tc-btn--secondary tc-btn--sm"
+                  onClick={() => {
+                    setShowPasswordForm((current) => !current);
+                    setPasswordSaved(false);
+                    setPasswordError(null);
+                  }}
+                >
+                  {showPasswordForm ? "Close" : passwordButtonLabel}
+                </button>
+              </div>
+
+              {showPasswordForm && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "var(--space-4)",
+                    padding: "var(--space-4)",
+                    borderRadius: "var(--radius-lg)",
+                    border: "1px solid var(--border-default)",
+                    background: "var(--surface-page)",
+                  }}
+                >
+                  <div className="tc-form-field">
+                    <label className="tc-form-label">New password</label>
+                    <input
+                      type="password"
+                      className="tc-input"
+                      placeholder="At least 6 characters"
+                      value={newPassword}
+                      onChange={(event) => setNewPassword(event.target.value)}
+                    />
+                  </div>
+
+                  <div className="tc-form-field">
+                    <label className="tc-form-label">Confirm new password</label>
+                    <input
+                      type="password"
+                      className="tc-input"
+                      placeholder="Repeat your new password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                    />
+                  </div>
+
+                  {passwordError && (
+                    <p style={{ fontSize: 13, color: "var(--error)", margin: 0 }}>{passwordError}</p>
+                  )}
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="tc-btn tc-btn--primary tc-btn--sm"
+                      onClick={handleSavePassword}
+                      disabled={savingPassword}
+                    >
+                      {savingPassword ? "Saving…" : passwordButtonLabel}
+                    </button>
+                    <button
+                      type="button"
+                      className="tc-btn tc-btn--ghost tc-btn--sm"
+                      onClick={() => {
+                        setShowPasswordForm(false);
+                        setNewPassword("");
+                        setConfirmPassword("");
+                        setPasswordError(null);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {passwordSaved && (
+                <p style={{ fontSize: 13, color: "var(--success)", margin: 0, fontWeight: 600 }}>
+                  ✓ Password updated.
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* Profile card */}
           <div className="tc-card" style={{ padding: "var(--space-6)", marginBottom: "var(--space-5)" }}>
             <div style={{ marginBottom: "var(--space-5)", paddingBottom: "var(--space-4)", borderBottom: "1px solid var(--border-default)" }}>
@@ -419,22 +678,22 @@ export default function SettingsClient({
               <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
                 {!calConnected && (
                   <>
-                    <a href="/api/auth/google" className="tc-btn tc-btn--secondary tc-btn--sm">
+                    <Link href="/api/auth/google" className="tc-btn tc-btn--secondary tc-btn--sm">
                       Connect Google
-                    </a>
-                    <a href="/api/auth/microsoft" className="tc-btn tc-btn--secondary tc-btn--sm">
+                    </Link>
+                    <Link href="/api/auth/microsoft" className="tc-btn tc-btn--secondary tc-btn--sm">
                       Connect Outlook
-                    </a>
+                    </Link>
                   </>
                 )}
                 {calConnected && (
                   <>
-                    <a href="/api/auth/google" className="tc-btn tc-btn--secondary tc-btn--sm">
+                    <Link href="/api/auth/google" className="tc-btn tc-btn--secondary tc-btn--sm">
                       Use Google
-                    </a>
-                    <a href="/api/auth/microsoft" className="tc-btn tc-btn--secondary tc-btn--sm">
+                    </Link>
+                    <Link href="/api/auth/microsoft" className="tc-btn tc-btn--secondary tc-btn--sm">
                       Use Outlook
-                    </a>
+                    </Link>
                     <button
                       type="button"
                       className="tc-btn tc-btn--ghost tc-btn--sm"
@@ -543,6 +802,84 @@ export default function SettingsClient({
               </div>
 
               <div className="tc-form-field">
+                <label className="tc-form-label">Public username</label>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr",
+                    alignItems: "stretch",
+                    border: "1px solid var(--border-default)",
+                    borderRadius: "var(--radius-md)",
+                    overflow: "hidden",
+                    background: "var(--surface-page)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "0 12px",
+                      fontSize: 13,
+                      color: "var(--text-tertiary)",
+                      background: "var(--surface-subtle)",
+                      borderRight: "1px solid var(--border-default)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {resolvedBaseUrl.replace(/^https?:\/\//, "")}/
+                  </div>
+                  <input
+                    type="text"
+                    className="tc-input"
+                    placeholder="your-name"
+                    value={publicSlug}
+                    onChange={(e) => {
+                      setPublicSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
+                      setSaved(false);
+                      setError(null);
+                    }}
+                    style={{ border: "none", borderRadius: 0 }}
+                  />
+                </div>
+                <p className="tc-form-hint">
+                  Your public booking links will look like{" "}
+                  <strong>
+                    {resolvedBaseUrl}/{normalizedPublicSlug || "your-name"}/your-event
+                  </strong>
+                  .
+                </p>
+                <p
+                  className="tc-form-hint"
+                  style={{
+                    color:
+                      checkingPublicSlug
+                        ? "var(--text-tertiary)"
+                        : publicSlugStatus?.available
+                          ? "var(--success)"
+                          : publicSlugStatus?.reason === "taken" ||
+                              publicSlugStatus?.reason === "invalid" ||
+                              publicSlugStatus?.reason === "error"
+                            ? "var(--error)"
+                            : "var(--text-tertiary)",
+                  }}
+                >
+                  {!publicSlug.trim()
+                    ? "Choose the public username that appears before every meeting slug."
+                    : checkingPublicSlug
+                      ? "Checking username availability…"
+                      : publicSlugStatus?.reason === "taken"
+                        ? "Username is already taken."
+                        : publicSlugStatus?.reason === "invalid"
+                          ? "Use lowercase letters, numbers, and hyphens only."
+                          : publicSlugStatus?.reason === "error"
+                            ? "Could not verify username right now."
+                            : publicSlugStatus?.available
+                              ? "Username is available."
+                              : ""}
+                </p>
+              </div>
+
+              <div className="tc-form-field">
                 <label className="tc-form-label">Photo URL</label>
                 <input
                   type="url"
@@ -618,14 +955,14 @@ export default function SettingsClient({
                   </button>
                 </>
               ) : (
-                <a href="/api/auth/zoom" className="tc-btn tc-btn--secondary tc-btn--sm" style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
+                <Link href="/api/auth/zoom" className="tc-btn tc-btn--secondary tc-btn--sm" style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}>
                   <svg width="16" height="16" viewBox="0 0 40 40" fill="none">
                     <rect width="40" height="40" rx="8" fill="#2D8CFF"/>
                     <path d="M8 14h16a2 2 0 012 2v8a2 2 0 01-2 2H8a2 2 0 01-2-2v-8a2 2 0 012-2z" fill="white"/>
                     <path d="M26 18l8-4v12l-8-4v-4z" fill="white"/>
                   </svg>
                   Connect Zoom
-                </a>
+                </Link>
               )}
             </div>
           </div>
@@ -690,7 +1027,7 @@ export default function SettingsClient({
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
                 <div>
-                  <a
+                  <Link
                     href="/api/auth/google-sheets"
                     className="tc-btn tc-btn--secondary tc-btn--sm"
                     style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}
@@ -702,7 +1039,7 @@ export default function SettingsClient({
                       <rect x="6" y="14" width="8" height="1.5" rx="0.75" fill="white"/>
                     </svg>
                     Connect Google Sheets
-                  </a>
+                  </Link>
                 </div>
               </div>
             )}

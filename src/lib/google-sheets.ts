@@ -199,6 +199,16 @@ async function sheetsPost(token: string, url: string, body: unknown) {
   return res.json();
 }
 
+async function sheetsPut(token: string, url: string, body: unknown) {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Sheets PUT failed (${res.status}): ${await res.text()}`);
+  return res.json();
+}
+
 // ── Core operations ───────────────────────────────────────────────────────────
 
 const DEFAULT_SHEET_NAME = "Bookings list";
@@ -250,7 +260,7 @@ export async function ensureHeaders(token: string, sheetId: string): Promise<voi
  *
  * Returns silently on any error — never blocks a booking from being saved.
  */
-export async function appendRow(booking: BookingRecord): Promise<void> {
+export async function upsertRow(booking: BookingRecord): Promise<void> {
   try {
     const token = await getValidSheetToken();
     if (!token) return;
@@ -283,6 +293,35 @@ export async function appendRow(booking: BookingRecord): Promise<void> {
       }
     }
 
+    const bookingIdColumnIndex = headerIndex.get("Booking ID");
+    let existingRowNumber: number | null = null;
+
+    if (bookingIdColumnIndex !== undefined) {
+      const rowsRange = `'${DEFAULT_SHEET_NAME}'!A2:ZZ`;
+      const rowsData = await sheetsGet(
+        token,
+        `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(rowsRange)}`
+      );
+      const rows: string[][] = (rowsData.values as string[][] | undefined) ?? [];
+      const existingIndex = rows.findIndex(
+        (existingRow) => existingRow[bookingIdColumnIndex] === booking.id
+      );
+      if (existingIndex >= 0) {
+        existingRowNumber = existingIndex + 2;
+      }
+    }
+
+    if (existingRowNumber) {
+      const endColLetter = colLetter(Math.max(headers.length - 1, 0));
+      const updateRange = `'${DEFAULT_SHEET_NAME}'!A${existingRowNumber}:${endColLetter}${existingRowNumber}`;
+      await sheetsPut(
+        token,
+        `${SHEETS_BASE}/${sheetId}/values/${encodeURIComponent(updateRange)}?valueInputOption=USER_ENTERED`,
+        { values: [row] }
+      );
+      return;
+    }
+
     const appendRange = `'${DEFAULT_SHEET_NAME}'!A:A`;
     await sheetsPost(
       token,
@@ -291,8 +330,12 @@ export async function appendRow(booking: BookingRecord): Promise<void> {
     );
   } catch (err) {
     // Soft-fail: log but never throw — bookings must never be blocked by Sheets errors
-    console.error("[google-sheets] appendRow error:", err);
+    console.error("[google-sheets] upsertRow error:", err);
   }
+}
+
+export async function appendRow(booking: BookingRecord): Promise<void> {
+  return upsertRow(booking);
 }
 
 // ── Column letter helper ───────────────────────────────────────────────────────

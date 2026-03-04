@@ -158,6 +158,39 @@ export async function createZoomMeeting({
   return { id: String(data.id), join_url: data.join_url };
 }
 
+export async function updateZoomMeeting({
+  meetingId,
+  topic,
+  start_time,
+  duration,
+}: {
+  meetingId: string;
+  topic?: string;
+  start_time: string;
+  duration: number;
+}): Promise<void> {
+  const token = await getValidZoomAccessToken();
+
+  const res = await fetch(`${ZOOM_API_BASE}/meetings/${encodeURIComponent(meetingId)}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      ...(topic ? { topic } : {}),
+      start_time,
+      duration,
+      type: 2,
+    }),
+  });
+
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(data.message || `Failed to update Zoom meeting (${res.status})`);
+  }
+}
+
 export async function deleteZoomMeeting(meetingId: string): Promise<void> {
   try {
     const token = await getValidZoomAccessToken();

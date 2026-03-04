@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createAuthServerClient } from "@/lib/supabase-server";
 
 /* ─── Reusable sub-components ─────────────────────────────── */
 
-function BrowserChrome({ children, height = 340 }: { children: React.ReactNode; height?: number }) {
+function BrowserChrome({ children, height = 340, url = "app.citacal.com" }: { children: React.ReactNode; height?: number; url?: string }) {
   return (
     <div style={{
       borderRadius: 12,
@@ -26,7 +27,7 @@ function BrowserChrome({ children, height = 340 }: { children: React.ReactNode; 
         <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#FFD980", display: "inline-block" }} />
         <span style={{ width: 11, height: 11, borderRadius: "50%", background: "#A8EBC8", display: "inline-block" }} />
         <div style={{ flex: 1, height: 22, background: "rgba(200,198,230,0.25)", borderRadius: 6, marginLeft: 8, display: "flex", alignItems: "center", paddingLeft: 10 }}>
-          <span style={{ fontSize: 10, color: "#9090B8", fontFamily: "var(--font-sans)" }}>app.citacal.com</span>
+          <span style={{ fontSize: 10, color: "#9090B8", fontFamily: "var(--font-sans)" }}>{url}</span>
         </div>
       </div>
       <div style={{ height, overflow: "hidden" }}>{children}</div>
@@ -34,79 +35,7 @@ function BrowserChrome({ children, height = 340 }: { children: React.ReactNode; 
   );
 }
 
-function Pill({ children, color = "primary" }: { children: React.ReactNode; color?: "primary" | "success" | "warning" | "danger" | "neutral" }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    primary: { bg: "rgba(123,108,246,0.10)", text: "#7B6CF6" },
-    success: { bg: "rgba(61,170,122,0.12)", text: "#2D8060" },
-    warning: { bg: "rgba(224,112,112,0.12)", text: "#B85555" },
-    danger:  { bg: "rgba(220,60,60,0.12)", text: "#C02020" },
-    neutral: { bg: "rgba(110,110,150,0.10)", text: "#6E6E96" },
-  };
-  const c = colors[color];
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "2px 8px", borderRadius: 999,
-      fontSize: 11, fontWeight: 600,
-      background: c.bg, color: c.text,
-      fontFamily: "var(--font-sans)",
-    }}>
-      {children}
-    </span>
-  );
-}
 
-/* ─── Mock: Analytics dashboard ────────────────────────────── */
-function AnalyticsMock() {
-  const rows = [
-    { name: "Sarah Chen",    email: "sarah@acme.co",    source: "linkedin",  campaign: "q1-demo-b",   clickId: "li:CjwK…",     status: "confirmed" },
-    { name: "Marcus Webb",   email: "mwebb@stripe.io",  source: "google",    campaign: "q1-demo-a",   clickId: "gclid:EAIa…",  status: "confirmed" },
-    { name: "Priya Rajan",   email: "priya@notion.so",  source: "linkedin",  campaign: "q1-brand",    clickId: "li:EAIb…",     status: "pending" },
-    { name: "Tom Vickers",   email: "tvick@linear.app", source: "google",    campaign: "q1-demo-a",   clickId: "gclid:EAIc…",  status: "confirmed" },
-    { name: "Amy Zhang",     email: "amy@figma.com",    source: "twitter",   campaign: "retarget-mar", clickId: "—",            status: "confirmed" },
-  ];
-  return (
-    <div style={{ fontFamily: "var(--font-sans)", fontSize: 11, padding: "14px 0" }}>
-      {/* KPI row */}
-      <div style={{ display: "flex", gap: 8, padding: "0 14px 12px", borderBottom: "1px solid rgba(200,198,230,0.35)" }}>
-        {[
-          { label: "Total Bookings", value: "1,842", color: undefined },
-          { label: "This Week", value: "47", color: undefined },
-          { label: "Top Source", value: "LinkedIn", color: undefined },
-          { label: "Attribution Coverage", value: "94%", color: "rgba(61,170,122,0.08)" },
-          { label: "Click ID Capture", value: "81%", color: "rgba(123,108,246,0.08)" },
-        ].map((k) => (
-          <div key={k.label} style={{
-            flex: 1, padding: "8px 10px", borderRadius: 8,
-            border: "1px solid rgba(200,198,230,0.5)",
-            background: k.color ?? "#FFFFFF",
-          }}>
-            <div style={{ color: "#9090B8", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>{k.label}</div>
-            <div style={{ color: "#1A1A2E", fontSize: 16, fontWeight: 700 }}>{k.value}</div>
-          </div>
-        ))}
-      </div>
-      {/* Table header */}
-      <div style={{ display: "grid", gridTemplateColumns: "130px 140px 70px 100px 80px 70px", gap: 0, padding: "6px 14px", borderBottom: "1px solid rgba(200,198,230,0.35)", color: "#9090B8", fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-        <span>NAME</span><span>EMAIL</span><span>SOURCE</span><span>CAMPAIGN</span><span>CLICK ID</span><span>STATUS</span>
-      </div>
-      {rows.map((r, i) => (
-        <div key={i} style={{ display: "grid", gridTemplateColumns: "130px 140px 70px 100px 80px 70px", gap: 0, padding: "7px 14px", borderBottom: "1px solid rgba(200,198,230,0.18)", background: i % 2 === 0 ? "transparent" : "rgba(248,248,255,0.5)", alignItems: "center" }}>
-          <span style={{ fontWeight: 600, color: "#1A1A2E", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
-          <span style={{ color: "#6E6E96", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.email}</span>
-          <span>
-            <Pill color={r.source === "linkedin" ? "primary" : r.source === "google" ? "success" : "neutral"}>
-              {r.source}
-            </Pill>
-          </span>
-          <span style={{ color: "#454560", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.campaign}</span>
-          <span style={{ color: "#7B6CF6", fontSize: 10, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.clickId}</span>
-          <span><Pill color={r.status === "confirmed" ? "success" : "warning"}>{r.status}</Pill></span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /* ─── Mock: Booking page ────────────────────────────────────── */
 function BookingMock() {
@@ -162,11 +91,69 @@ function BookingMock() {
   );
 }
 
+/* ─── Mock: Sales rep calendar ──────────────────────────────── */
+function HeroMock() {
+  const CELL_H = 28;
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  const hours = ["9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM"];
+  const meetings = [
+    { day: 0, start: 0, name: "Sarah Chen",  color: "#7B6CF6" },
+    { day: 0, start: 2, name: "Tom Vickers", color: "#3DAA7A" },
+    { day: 1, start: 1, name: "Priya Rajan", color: "#7B6CF6" },
+    { day: 1, start: 4, name: "Amy Zhang",   color: "#5B8DF6" },
+    { day: 2, start: 0, name: "Marcus Webb", color: "#3DAA7A" },
+    { day: 2, start: 3, name: "Jin Park",    color: "#7B6CF6" },
+    { day: 3, start: 1, name: "Kim Scott",   color: "#3DAA7A" },
+    { day: 4, start: 2, name: "Lena M.",     color: "#7B6CF6" },
+  ];
+  return (
+    <div style={{ fontFamily: "var(--font-sans)", padding: "14px 14px 10px", height: "100%", boxSizing: "border-box" }}>
+      {/* Rep header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 12 }}>
+        <div style={{ width: 24, height: 24, borderRadius: "50%", background: "linear-gradient(135deg, #7B6CF6, #A89AF9)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#FFF", flexShrink: 0 }}>A</div>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#1A1A2E" }}>Aiden Hart</span>
+        <span style={{ fontSize: 9.5, color: "#9090B8" }}>· Week of Mar 3</span>
+        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 600, color: "#2D8060", background: "rgba(61,170,122,0.10)", padding: "2px 8px", borderRadius: 999 }}>8 bookings</span>
+      </div>
+      {/* Grid */}
+      <div style={{ display: "flex", gap: 0 }}>
+        <div style={{ width: 32, flexShrink: 0, paddingTop: 19 }}>
+          {hours.map((h) => (
+            <div key={h} style={{ height: CELL_H, fontSize: 8, color: "#9090B8", lineHeight: 1 }}>{h}</div>
+          ))}
+        </div>
+        <div style={{ flex: 1, display: "flex", gap: 4 }}>
+          {days.map((d, di) => (
+            <div key={d} style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ height: 19, fontSize: 9, fontWeight: 700, color: "#454560", textAlign: "center" }}>{d}</div>
+              <div style={{ position: "relative", height: hours.length * CELL_H }}>
+                {hours.map((_, hi) => (
+                  <div key={hi} style={{ height: CELL_H, borderTop: "1px solid rgba(200,198,230,0.3)", background: hi % 2 === 0 ? "rgba(255,255,255,0.7)" : "rgba(248,248,255,0.5)" }} />
+                ))}
+                {meetings.filter(m => m.day === di).map((m, mi) => (
+                  <div key={mi} style={{
+                    position: "absolute", top: m.start * CELL_H + 1, left: 1, right: 1,
+                    height: CELL_H - 3, borderRadius: 5,
+                    background: `${m.color}1A`, border: `1.5px solid ${m.color}55`,
+                    padding: "3px 5px", overflow: "hidden",
+                  }}>
+                    <div style={{ fontSize: 8, fontWeight: 700, color: m.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Comparison row ────────────────────────────────────────── */
 function CompareRow({ field, without, with: withVal, highlight = false }: { field: string; without: string; with: string; highlight?: boolean }) {
   return (
     <div style={{
-      display: "grid", gridTemplateColumns: "160px 1fr 1fr", gap: 0,
+      display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 0,
       padding: "11px 0", borderBottom: "1px solid rgba(200,198,230,0.25)",
       background: highlight ? "rgba(123,108,246,0.03)" : "transparent",
     }}>
@@ -193,16 +180,18 @@ function LandingNav({ isLoggedIn }: { isLoggedIn: boolean }) {
       display: "flex", alignItems: "center", gap: 32, height: 56,
     }}>
       {/* Logo */}
-      <a href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-        <div style={{ width: 28, height: 28, borderRadius: 7, background: "linear-gradient(135deg, #7B6CF6, #A89AF9)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
+      <a href="/" style={{ display: "flex", alignItems: "center", gap: 9, textDecoration: "none" }}>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(135deg, #7B6CF6, #A89AF9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 2px 8px rgba(123,108,246,0.28)" }}>
+          <svg width="17" height="17" viewBox="-2 0 20 20" fill="none">
+            <path d="M14.5 5.5C13 3.7 10.8 2.5 8.2 2.5C4.5 2.5 1.5 5.5 1.5 9.5C1.5 13.5 4.5 16.5 8.2 16.5C10.8 16.5 13 15.3 14.5 13.5" stroke="white" strokeWidth="2.6" strokeLinecap="round"/>
           </svg>
         </div>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#1A1A2E", fontFamily: "var(--font-sans)" }}>CitaCal</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: 15, fontFamily: "var(--font-sans)", letterSpacing: "-0.01em", lineHeight: 1 }}>
+            <span style={{ fontWeight: 400, color: "#1A1A2E" }}>Cita</span><span style={{ fontWeight: 800, color: "#7B6CF6" }}>Cal</span>
+          </span>
+          <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.25)", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.05em", lineHeight: 1 }}>BETA</span>
+        </span>
       </a>
 
       <div className="landing-nav-links" style={{ display: "flex", alignItems: "center", gap: 28, flex: 1 }}>
@@ -238,7 +227,30 @@ function LandingNav({ isLoggedIn }: { isLoggedIn: boolean }) {
 }
 
 /* ─── Main page ─────────────────────────────────────────────── */
-export default async function LandingPage() {
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const authErrorCode = resolvedSearchParams.error_code;
+  const authError = resolvedSearchParams.error;
+  const normalizedErrorCode = Array.isArray(authErrorCode) ? authErrorCode[0] : authErrorCode;
+  const normalizedError = Array.isArray(authError) ? authError[0] : authError;
+
+  if (normalizedErrorCode || normalizedError) {
+    const loginUrl = new URL("/login", "https://citacal.com");
+    if (normalizedErrorCode === "bad_oauth_state") {
+      loginUrl.searchParams.set("auth_error", "session_expired");
+    } else {
+      loginUrl.searchParams.set(
+        "auth_error",
+        normalizedErrorCode || normalizedError || "oauth_failed"
+      );
+    }
+    redirect(`${loginUrl.pathname}${loginUrl.search}`);
+  }
+
   let isLoggedIn = false;
   try {
     const supabase = await createAuthServerClient();
@@ -253,9 +265,9 @@ export default async function LandingPage() {
       <LandingNav isLoggedIn={isLoggedIn} />
 
       {/* ══ HERO ══════════════════════════════════════════════ */}
-      <section style={{ maxWidth: 1140, margin: "0 auto", padding: "80px 24px 40px" }}>
+      <section style={{ maxWidth: 1140, margin: "0 auto", padding: "80px 24px 60px" }}>
         <div className="landing-hero-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 60, alignItems: "center" }}>
-          {/* Left */}
+          {/* Left — same copy */}
           <div>
             <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
               <div style={{
@@ -265,15 +277,7 @@ export default async function LandingPage() {
                 fontSize: 11, fontWeight: 600, color: "#7B6CF6",
               }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#7B6CF6", display: "inline-block" }} />
-                Built for growth teams running paid ads
-              </div>
-              <div style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "4px 12px", borderRadius: 999,
-                background: "rgba(61,170,122,0.08)", border: "1px solid rgba(61,170,122,0.25)",
-                fontSize: 11, fontWeight: 600, color: "#2D8060",
-              }}>
-                ✦ Free forever — no credit card
+                Scheduling for marketing &amp; sales teams
               </div>
             </div>
 
@@ -289,7 +293,7 @@ export default async function LandingPage() {
             </h1>
 
             <p style={{ fontSize: 16, color: "#454560", lineHeight: 1.6, margin: "0 0 32px", maxWidth: 440 }}>
-              Calendly drops your UTMs and click IDs in iframes. CitaCal captures all 10 attribution signals — UTMs, gclid, li_fat_id, fbclid — and fires them to your CRM the moment a demo is confirmed.
+              Scheduling tool built for marketing and sales teams. Know how your meetings are performing and where your leads are coming from with robust tracking.
             </p>
 
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -300,7 +304,7 @@ export default async function LandingPage() {
                 color: "#FFF", textDecoration: "none",
                 boxShadow: "0 4px 16px rgba(123,108,246,0.30)",
               }}>
-                Start free — always free
+                Start free — it&apos;s fully free
               </Link>
               <a href="#how-it-works" style={{ fontSize: 14, color: "#6E6E96", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
                 See how it works ↓
@@ -308,25 +312,114 @@ export default async function LandingPage() {
             </div>
 
             {/* Stat strip */}
-            <div style={{ display: "flex", gap: 28, marginTop: 40 }}>
-              {[
-                { val: "10", label: "attribution params" },
-                { val: "5", label: "ad platforms" },
-                { val: "0", label: "lost click IDs" },
-              ].map((s) => (
-                <div key={s.label}>
-                  <div style={{ fontSize: 24, fontWeight: 800, color: "#7B6CF6" }}>{s.val}</div>
-                  <div style={{ fontSize: 11, color: "#6E6E96" }}>{s.label}</div>
-                </div>
-              ))}
+            <div style={{ display: "flex", gap: 12, marginTop: 40 }}>
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "6px 14px", borderRadius: 999,
+                background: "rgba(61,170,122,0.08)", border: "1px solid rgba(61,170,122,0.25)",
+                fontSize: 12, fontWeight: 600, color: "#2D8060",
+              }}>
+                ✦ Fully free — no credit card
+              </div>
             </div>
           </div>
 
-          {/* Right: Analytics mock */}
-          <div className="landing-hero-mock">
-            <BrowserChrome height={300}>
-              <AnalyticsMock />
-            </BrowserChrome>
+          {/* Right: Variant B mock — freely floating layout */}
+          <div className="landing-hero-mock" style={{ position: "relative", height: 528 }}>
+
+            {/* ── 4 stat cards across the top, staggered, overlapping browser header ── */}
+            {[
+              { label: "Total Bookings", value: "1,842",    sub: "↑ 12% this month", subColor: "#2D8060", valColor: "#1A1A2E", pos: { left: "0%" }   },
+              { label: "Attribution",    value: "94%",      sub: "sources tracked",  subColor: "#9090B8", valColor: "#7B6CF6", pos: { left: "26%" }  },
+              { label: "Top Source",     value: "LinkedIn", sub: "847 bookings",     subColor: "#9090B8", valColor: "#1A1A2E", pos: { right: "26%" } },
+              { label: "Cancellation",   value: "3.2%",     sub: "last 30 days",     subColor: "#9090B8", valColor: "#1A1A2E", pos: { right: "0%" }  },
+            ].map((c, i) => (
+              <div key={c.label} style={{
+                position: "absolute", top: i % 2 === 0 ? 6 : 0, ...c.pos,
+                width: "22%", minWidth: 106,
+                background: "#FFF", borderRadius: 10,
+                boxShadow: "0 6px 20px rgba(60,50,120,0.12)",
+                border: "1px solid rgba(200,198,230,0.5)",
+                padding: "10px 12px", zIndex: 2,
+              }}>
+                <div style={{ fontSize: 7.5, fontWeight: 700, color: "#9090B8", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>{c.label}</div>
+                <div style={{ fontSize: c.value.length > 4 ? 15 : 21, fontWeight: 800, color: c.valColor, lineHeight: 1 }}>{c.value}</div>
+                <div style={{ fontSize: 8.5, color: c.subColor, marginTop: 5 }}>{c.sub}</div>
+              </div>
+            ))}
+
+            {/* ── Browser frame (calendar only) ── */}
+            {/* top: 64, toolbar ~38px, content 232px → total 270 → bottom at 334 */}
+            <div style={{ position: "absolute", top: 64, left: 4, right: 4, zIndex: 1 }}>
+              <BrowserChrome height={232} url="citacal.com/app">
+                <HeroMock />
+              </BrowserChrome>
+            </div>
+
+            {/* ── JSON payload card — straddles browser bottom (~50/50) ── */}
+            {/* Browser bottom ≈ 64+270=334. Card top: 294 → 40px inside, 40px outside ✓ */}
+            <div style={{
+              position: "absolute", top: 294, left: "50%", transform: "translateX(-50%)",
+              width: 174, zIndex: 3,
+              background: "#1A1A2E", borderRadius: 12,
+              boxShadow: "0 10px 32px rgba(26,26,46,0.32)",
+              padding: "10px 14px",
+              fontSize: 9, fontFamily: "monospace", color: "#C8C8E8", lineHeight: 1.8,
+            }}>
+              <div style={{ fontSize: 7.5, fontWeight: 700, color: "#5858A0", marginBottom: 7, fontFamily: "var(--font-sans)", textTransform: "uppercase", letterSpacing: "0.08em" }}>webhook / data layer</div>
+              <div><span style={{ color: "#A89AF9" }}>&quot;utm_source&quot;</span>: <span style={{ color: "#A8EBC8" }}>&quot;linkedin&quot;</span>,</div>
+              <div><span style={{ color: "#A89AF9" }}>&quot;li_fat_id&quot;</span>: <span style={{ color: "#A8EBC8" }}>&quot;CjwK…&quot;</span>,</div>
+              <div><span style={{ color: "#A89AF9" }}>&quot;booking&quot;</span>: <span style={{ color: "#C8C8E8" }}>{"{ … }"}</span></div>
+            </div>
+
+            {/* ── SVG dotted lines: JSON card bottom → each badge ── */}
+            {/* JSON card bottom ≈ 294 + 10+8+7+3×16+10 = 294+83 = 377 */}
+            {/* SVG sits at top:377, height:62. Lines: trunk (250,0)→(250,20), bar(44,20)→(456,20), drops→(x,50) */}
+            <svg style={{ position: "absolute", top: 377, left: 0, overflow: "visible", pointerEvents: "none" }}
+              width="100%" height="62" viewBox="0 0 500 62" preserveAspectRatio="none">
+              <line x1="250" y1="0"  x2="250" y2="20" stroke="rgba(123,108,246,0.4)" strokeWidth="1.5" strokeDasharray="3 4"/>
+              <line x1="44"  y1="20" x2="456" y2="20" stroke="rgba(123,108,246,0.4)" strokeWidth="1.5" strokeDasharray="3 4"/>
+              {[44, 130, 216, 284, 370, 456].map((x) => (
+                <line key={x} x1={x} y1="20" x2={x} y2="50" stroke="rgba(123,108,246,0.4)" strokeWidth="1.5" strokeDasharray="3 4"/>
+              ))}
+            </svg>
+
+            {/* ── Destination badges with service logos ── */}
+            {/* Badge tops: 377+50=427. Centers at SVG x values mapped to %: 44/500=8.8%, 130=26%, 216=43.2%, 284=56.8%, 370=74%, 456=91.2% */}
+            {[
+              { name: "Tag Manager", bg: "#1A73E8", pct: "8.8%",  slug: "googletagmanager" },
+              { name: "GA4",         bg: "#E37400", pct: "26%",   slug: "googleanalytics" },
+              { name: "Google Ads",  bg: "#4285F4", pct: "43.2%", slug: "googleads" },
+              { name: "Meta Ads",    bg: "#0866FF", pct: "56.8%", slug: "meta" },
+              { name: "Zapier",      bg: "#FF4A00", pct: "74%",   slug: "zapier" },
+              { name: "Sheets",      bg: "#34A853", pct: "91.2%", slug: "googlesheets" },
+            ].map((d) => (
+              <div key={d.name} style={{
+                position: "absolute", top: 427,
+                left: `calc(${d.pct} - 24px)`,
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+              }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: 10,
+                  background: d.bg,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
+                }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`https://cdn.simpleicons.org/${d.slug}/ffffff`} width="22" height="22" alt={d.name} />
+                </div>
+                <div style={{ fontSize: 7.5, fontWeight: 600, color: "#6E6E96", textAlign: "center", whiteSpace: "nowrap" }}>{d.name}</div>
+              </div>
+            ))}
+
+            {/* ── "& everywhere" label beneath badges ── */}
+            <div style={{
+              position: "absolute", top: 492, left: 0, right: 0,
+              textAlign: "center", fontSize: 11, color: "#9090B8",
+              fontStyle: "italic", fontWeight: 500,
+            }}>
+              &amp; everywhere
+            </div>
           </div>
         </div>
       </section>
@@ -335,10 +428,10 @@ export default async function LandingPage() {
       <section style={{ maxWidth: 1140, margin: "72px auto 0", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
           <h2 style={{ fontSize: 32, fontWeight: 800, margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-            The $10,000 attribution gap
+            You know your ad spend.<br />Do you know what it&apos;s booking?
           </h2>
           <p style={{ fontSize: 15, color: "#6E6E96", maxWidth: 520, margin: "0 auto" }}>
-            You spend $50k/mo on ads. Your calendar tool silently drops attribution on the most important click — the booking. Here's the difference.
+            Most scheduling tools drop your tracking data the moment someone books. CitaCal keeps it intact — so you can connect your ad spend to actual meetings.
           </p>
         </div>
 
@@ -349,18 +442,14 @@ export default async function LandingPage() {
           boxShadow: "0 4px 24px rgba(60,50,120,0.07)",
         }}>
           {/* Header row */}
-          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr 1fr", background: "#F4F3FF", padding: "12px 0", borderBottom: "1px solid rgba(200,198,230,0.35)" }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#9090B8", paddingLeft: 16, textTransform: "uppercase", letterSpacing: "0.08em" }}>Signal</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", background: "#F4F3FF", padding: "12px 0", borderBottom: "1px solid rgba(200,198,230,0.35)" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#9090B8", paddingLeft: 16, textTransform: "uppercase", letterSpacing: "0.08em" }}>Feature</span>
             <span style={{ fontSize: 11, fontWeight: 700, color: "#B85555", textTransform: "uppercase", letterSpacing: "0.08em" }}>Standard calendars</span>
             <span style={{ fontSize: 11, fontWeight: 700, color: "#2D8060", textTransform: "uppercase", letterSpacing: "0.08em" }}>CitaCal</span>
           </div>
-          <CompareRow field="utm_source" without="Lost in iframe" with="Captured & stored" highlight />
-          <CompareRow field="utm_campaign" without="Lost in iframe" with="Captured & stored" />
-          <CompareRow field="gclid (Google Ads)" without="Never captured" with="Captured & stored" highlight />
-          <CompareRow field="li_fat_id (LinkedIn)" without="Never captured" with="Captured & stored" />
-          <CompareRow field="fbclid (Meta)" without="Never captured" with="Captured & stored" highlight />
-          <CompareRow field="CRM webhook" without="Manual Zapier setup" with="Native, server-side" />
-          <CompareRow field="Round-robin routing" without="Not available" with="Built-in" highlight />
+          <CompareRow field="UTM tracking" without="Lost at booking" with="Captured on every booking" highlight />
+          <CompareRow field="GA tracking preserved" without="Cookie breaks in iframe" with="GA cookie stays intact" />
+          <CompareRow field="Send data anywhere" without="Zapier workarounds only" with="Native webhooks + Google Sheets" highlight />
         </div>
       </section>
 
@@ -368,10 +457,10 @@ export default async function LandingPage() {
       <section id="how-it-works" style={{ maxWidth: 1140, margin: "96px auto 0", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 52 }}>
           <h2 style={{ fontSize: 32, fontWeight: 800, margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-            Attribution that actually survives
+            Works like any scheduling tool.<br />Tracks like nothing else.
           </h2>
           <p style={{ fontSize: 15, color: "#6E6E96", maxWidth: 520, margin: "0 auto" }}>
-            From the first ad click to the CRM entry — every signal preserved.
+            Set up once, share your link, and every booking automatically comes with full attribution data.
           </p>
         </div>
 
@@ -379,28 +468,28 @@ export default async function LandingPage() {
           {[
             {
               step: "01",
-              title: "Visitor clicks your ad",
-              body: "UTMs and click IDs land in the URL. CitaCal captures all 10 signals immediately — before the booking page even loads.",
-              icon: "🎯",
-              detail: "utm_source=linkedin\nutm_campaign=q1-demo\nli_fat_id=CjwKCAj…",
+              title: "Use it as your scheduling tool",
+              body: "Share your CitaCal link exactly like you'd share a Calendly link. Visitors pick a time — you get a booking in your calendar.",
+              icon: "📅",
+              detail: "Share your link → they pick a time\nYou get a calendar event\nThey get a confirmation email",
               color: "rgba(123,108,246,0.07)",
               border: "rgba(123,108,246,0.20)",
             },
             {
               step: "02",
-              title: "They pick a time",
-              body: "Your booking page shows real availability from Google Calendar or Outlook. Round-robin assigns the right team member.",
-              icon: "📅",
-              detail: "Real-time availability\nTeam round-robin\nConflict detection",
+              title: "Fit CitaCal into your tracking setup",
+              body: "CitaCal captures UTMs, click IDs, and GA cookies at the moment of booking — no Zapier, no iframes, no tracking blind spots.",
+              icon: "🎯",
+              detail: "utm_source=linkedin\nutm_campaign=q1-demo\nli_fat_id=CjwKCAj…",
               color: "rgba(94,198,160,0.07)",
               border: "rgba(94,198,160,0.25)",
             },
             {
               step: "03",
-              title: "Attribution fires instantly",
-              body: "On confirmation, CitaCal fires a server-side webhook with full booking + attribution context — to your CRM, Slack, or anywhere.",
+              title: "See analytics. Send data anywhere.",
+              body: "View attribution data in your dashboard, export CSV, or fire a webhook to your CRM, Slack, or Google Sheets on every booking.",
               icon: "⚡",
-              detail: '{ "utm_source": "linkedin",\n  "gclid": "EAIa…",\n  "booking": { … } }',
+              detail: '{ "utm_source": "linkedin",\n  "campaign": "q1-demo",\n  "booking": { … } }',
               color: "rgba(91,141,246,0.07)",
               border: "rgba(91,141,246,0.22)",
             },
@@ -427,7 +516,7 @@ export default async function LandingPage() {
       <section id="features" style={{ maxWidth: 1140, margin: "96px auto 0", padding: "0 24px" }}>
         <div style={{ textAlign: "center", marginBottom: 52 }}>
           <h2 style={{ fontSize: 32, fontWeight: 800, margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-            Built for growth teams
+            Everything you need to schedule and track
           </h2>
         </div>
 
@@ -436,13 +525,13 @@ export default async function LandingPage() {
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#7B6CF6", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Booking experience</div>
             <h3 style={{ fontSize: 26, fontWeight: 800, margin: "0 0 16px", letterSpacing: "-0.02em" }}>
-              Clean scheduling.<br />Zero attribution loss.
+              A scheduling experience<br />your leads will actually use.
             </h3>
             <p style={{ fontSize: 14, color: "#454560", lineHeight: 1.7, margin: "0 0 24px" }}>
-              Your booking page shows real-time availability pulled from Google Calendar or Outlook. Visitors pick a time in their timezone — all attribution signals ride along silently in the background.
+              Clean, fast booking pages that pull real availability from Google Calendar or Outlook. Visitors pick a time in their timezone — no friction, no back-and-forth.
             </p>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {["Timezone-aware slot picker (600+ IANA zones)", "Real availability from Google Calendar & Outlook", "Rate limiting + disposable email blocking", "Attendees can check their own calendar for conflicts"].map((item) => (
+              {["Timezone-aware slot picker (600+ IANA zones)", "Real availability from Google Calendar & Outlook", "Confirmation emails sent automatically", "Attendees can check their own calendar for conflicts"].map((item) => (
                 <li key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "#454560" }}>
                   <span style={{ color: "#3DAA7A", marginTop: 1 }}>✓</span> {item}
                 </li>
@@ -499,13 +588,13 @@ export default async function LandingPage() {
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#7B6CF6", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Attribution analytics</div>
             <h3 style={{ fontSize: 26, fontWeight: 800, margin: "0 0 16px", letterSpacing: "-0.02em" }}>
-              Know which campaigns<br />drive booked demos.
+              See exactly which campaigns<br />are driving meetings.
             </h3>
             <p style={{ fontSize: 14, color: "#454560", lineHeight: 1.7, margin: "0 0 24px" }}>
-              Filter bookings by source, campaign, or click ID type. See attribution coverage rates so you can spot gaps. Export every row with full UTM context for your data warehouse.
+              Every booking comes tagged with the source, campaign, and click ID that drove it. Filter, export, or pipe it into your BI tool — the data is yours.
             </p>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {["5 UTM params + 5 click IDs on every booking row", "Filter by source, campaign, status, date range, or free text", "Attribution coverage % and Click ID capture rate KPIs", "CSV export with all fields for BI tools"].map((item) => (
+              {["UTM source, medium, campaign on every booking row", "Filter by source, campaign, status, or date range", "See attribution coverage at a glance", "CSV export with all fields for BI tools"].map((item) => (
                 <li key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "#454560" }}>
                   <span style={{ color: "#3DAA7A", marginTop: 1 }}>✓</span> {item}
                 </li>
@@ -519,13 +608,13 @@ export default async function LandingPage() {
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#3DAA7A", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Team scheduling</div>
             <h3 style={{ fontSize: 26, fontWeight: 800, margin: "0 0 16px", letterSpacing: "-0.02em" }}>
-              Round-robin routing<br />with real availability.
+              Route leads to the right rep,<br />automatically.
             </h3>
             <p style={{ fontSize: 14, color: "#454560", lineHeight: 1.7, margin: "0 0 24px" }}>
-              Assign any scheduling page to a team of AEs or SDRs. CitaCal routes each new booking to the least-recently-booked available rep — no double-bookings, no Zapier hacks.
+              Assign a scheduling page to your whole sales team. CitaCal checks each rep&apos;s live calendar and distributes bookings evenly — no spreadsheets, no manual assignment.
             </p>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {["Checks each rep's calendar in real time", "Routes to least-recently-booked available rep", "Race condition guard via database unique index", "Each rep connects their own Google Calendar or Outlook"].map((item) => (
+              {["Checks each rep's real-time calendar availability", "Round-robin distribution — no double-bookings", "Each rep connects their own Google Calendar or Outlook", "Collective mode: show slots when everyone is free"].map((item) => (
                 <li key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "#454560" }}>
                   <span style={{ color: "#3DAA7A", marginTop: 1 }}>✓</span> {item}
                 </li>
@@ -605,13 +694,13 @@ export default async function LandingPage() {
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#5B8DF6", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Webhooks & integrations</div>
             <h3 style={{ fontSize: 26, fontWeight: 800, margin: "0 0 16px", letterSpacing: "-0.02em" }}>
-              Fire to your CRM<br />the moment it&apos;s booked.
+              Send booking data<br />wherever you need it.
             </h3>
             <p style={{ fontSize: 14, color: "#454560", lineHeight: 1.7, margin: "0 0 24px" }}>
-              Configure webhook URLs in Settings. CitaCal fires a signed POST to your endpoint instantly on booking confirmation — with full attribution context, no Zapier required.
+              Every confirmed booking fires a webhook with the full booking + attribution payload. Connect your CRM, Slack, or data warehouse — no Zapier required.
             </p>
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-              {["Server-side webhooks (no client-side drops)", "HMAC signature for security", "Full UTM + click ID context in every payload", "Connect to HubSpot, Salesforce, Slack — anything"].map((item) => (
+              {["Signed server-side webhooks on every booking", "Full UTM + click ID data in every payload", "Google Sheets sync built-in", "Connect to HubSpot, Salesforce, Slack — anything with an API"].map((item) => (
                 <li key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "#454560" }}>
                   <span style={{ color: "#3DAA7A", marginTop: 1 }}>✓</span> {item}
                 </li>
@@ -629,10 +718,9 @@ export default async function LandingPage() {
         boxShadow: "0 16px 48px rgba(123,108,246,0.25)",
       }}>
         <h2 className="landing-cta-title" style={{ fontSize: 38, fontWeight: 800, color: "#FFF", margin: "0 0 16px", letterSpacing: "-0.02em" }}>
-          Stop losing attribution<br />at the booking step.
+          Your best demos are already out there.<br />Start tracking where they come from.
         </h2>
         <p style={{ fontSize: 16, color: "rgba(255,255,255,0.82)", margin: "0 0 36px" }}>
-          Set up in 10 minutes. Connect your calendar. Start capturing every click ID.<br />
           <span style={{ fontWeight: 600 }}>CitaCal is completely free — no plans, no trials, no credit card.</span>
         </p>
         <Link href="/signup" style={{
@@ -644,7 +732,7 @@ export default async function LandingPage() {
           Get started — it&apos;s free →
         </Link>
         <div style={{ marginTop: 20, fontSize: 12, color: "rgba(255,255,255,0.65)" }}>
-          Free forever · No credit card · Connect Google Calendar in one click
+          Fully free · No credit card · Connect Google Calendar in one click
         </div>
       </section>
 
@@ -654,16 +742,18 @@ export default async function LandingPage() {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         borderTop: "1px solid rgba(200,198,230,0.35)", marginTop: 72,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 22, height: 22, borderRadius: 6, background: "linear-gradient(135deg, #7B6CF6, #A89AF9)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <div style={{ width: 22, height: 22, borderRadius: 6, background: "linear-gradient(135deg, #7B6CF6, #A89AF9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="13" height="13" viewBox="-2 0 20 20" fill="none">
+              <path d="M14.5 5.5C13 3.7 10.8 2.5 8.2 2.5C4.5 2.5 1.5 5.5 1.5 9.5C1.5 13.5 4.5 16.5 8.2 16.5C10.8 16.5 13 15.3 14.5 13.5" stroke="white" strokeWidth="2.6" strokeLinecap="round"/>
             </svg>
           </div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#1A1A2E" }}>CitaCal</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ fontSize: 13, fontFamily: "var(--font-sans)", letterSpacing: "-0.01em", lineHeight: 1 }}>
+              <span style={{ fontWeight: 400, color: "#1A1A2E" }}>Cita</span><span style={{ fontWeight: 800, color: "#7B6CF6" }}>Cal</span>
+            </span>
+            <span style={{ fontSize: 8, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.25)", borderRadius: 3, padding: "2px 4px", letterSpacing: "0.05em", lineHeight: 1 }}>BETA</span>
+          </span>
         </div>
         <div style={{ display: "flex", gap: 24, fontSize: 12, color: "#9090B8" }}>
           <a href="/docs" style={{ color: "#9090B8", textDecoration: "none" }}>Documentation</a>

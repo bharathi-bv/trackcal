@@ -7,6 +7,7 @@
 
 import { headers } from "next/headers";
 import { createServerClient } from "@/lib/supabase";
+import { ensureHostPublicSlug } from "@/lib/public-booking-links";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import BookingsDashboardClient from "@/components/dashboard/BookingsDashboardClient";
 
@@ -49,8 +50,9 @@ export default async function DashboardPage() {
   const todayISO = toISODate(new Date());
   const db = createServerClient();
 
-  const [{ data: upcomingBookings }, { data: eventTypes }, { data: hostSettings }] =
+  const [hostPublicSlug, { data: upcomingBookings }, { data: eventTypes }, { data: hostSettings }] =
     await Promise.all([
+      ensureHostPublicSlug({ db }),
       db
         .from("bookings")
         .select("id, date, time, name, email, status, event_slug")
@@ -65,7 +67,7 @@ export default async function DashboardPage() {
         .order("created_at", { ascending: true }),
       db
         .from("host_settings")
-        .select("google_refresh_token, microsoft_refresh_token, booking_base_url")
+        .select("google_refresh_token, microsoft_refresh_token, booking_base_url, public_slug")
         .limit(1)
         .maybeSingle(),
     ]);
@@ -128,6 +130,7 @@ export default async function DashboardPage() {
           bookings={bookings}
           activeEventTypes={activeEventTypes}
           baseUrl={baseUrl}
+          hostPublicSlug={hostSettings?.public_slug ?? hostPublicSlug}
           todayISO={todayISO}
         />
       </main>

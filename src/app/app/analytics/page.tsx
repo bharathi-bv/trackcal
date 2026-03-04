@@ -10,6 +10,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createAuthServerClient } from "@/lib/supabase-server";
 import { createServerClient } from "@/lib/supabase";
+import {
+  buildPublicBookingPath,
+  ensureHostPublicSlug,
+} from "@/lib/public-booking-links";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import CsvExportButton from "@/components/dashboard/CsvExportButton";
 import BookingStatusSelect from "@/components/dashboard/BookingStatusSelect";
@@ -403,6 +407,7 @@ export default async function AnalyticsPage({
   // 3. All queries in parallel
   const db = createServerClient();
   const [
+    hostPublicSlug,
     bookingsResult,
     filteredCountResult,
     todayCountResult,
@@ -416,7 +421,9 @@ export default async function AnalyticsPage({
     thisMonthCountResult,
     allBookingsResult,
     activeLinksResult,
+    firstActiveEventResult,
   ] = await Promise.all([
+    ensureHostPublicSlug({ db }),
     applyBookingFilters(
       // @ts-expect-error Supabase builder type depth
       db.from("bookings").select(BOOKING_COLUMNS).order("created_at", { ascending: false }),
@@ -441,12 +448,17 @@ export default async function AnalyticsPage({
       .range(0, 4999)
       .order("date", { ascending: true }),
     db.from("event_types").select("id", { count: "exact", head: true }).eq("is_active", true),
+    db.from("event_types").select("slug").eq("is_active", true).order("created_at", { ascending: true }).limit(1).maybeSingle(),
   ]);
 
   // 4. Process base data
   const filtered: Booking[] = bookingsResult.data ?? [];
   const filteredTotal = filteredCountResult.count ?? 0;
   const activeLinks = activeLinksResult.count ?? 0;
+  const firstActiveEventSlug = firstActiveEventResult.data?.slug ?? null;
+  const bookingPageHref = firstActiveEventSlug
+    ? buildPublicBookingPath(hostPublicSlug, firstActiveEventSlug)
+    : "/app/dashboard/event-types";
   const todayCount = todayCountResult.count ?? 0;
   const attributedCount = attributedCountResult.count ?? 0;
   const clickIdCount = clickIdCountResult.count ?? 0;
@@ -644,7 +656,7 @@ export default async function AnalyticsPage({
                   </p>
                 </div>
                 <div style={{ display: "flex", gap: "var(--space-3)" }}>
-                  <Link href="/book" className="tc-btn tc-btn--primary tc-btn--sm">View booking page →</Link>
+                  <Link href={bookingPageHref} className="tc-btn tc-btn--primary tc-btn--sm">View booking page →</Link>
                   <Link href="/docs" className="tc-btn tc-btn--ghost tc-btn--sm">UTM tracking guide</Link>
                 </div>
               </div>
@@ -670,7 +682,7 @@ export default async function AnalyticsPage({
                 <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>All Bookings</h2>
                 <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
                   <CsvExportButton bookings={filtered} />
-                  <Link href="/book" className="tc-btn tc-btn--soft tc-btn--sm">View booking page →</Link>
+                  <Link href={bookingPageHref} className="tc-btn tc-btn--soft tc-btn--sm">View booking page →</Link>
                 </div>
               </div>
 

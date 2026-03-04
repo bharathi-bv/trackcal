@@ -615,6 +615,10 @@ export default function ThreeDaySlotPicker({
                     return (
                       <div
                         key={row.timeStr}
+                        data-testid={`slot-${day}-${rowIdx}`}
+                        data-slot-available={isAvailable ? "true" : "false"}
+                        data-slot-day={day}
+                        data-slot-time={row.timeStr}
                         style={{
                           height: ROW_HEIGHT,
                           background:

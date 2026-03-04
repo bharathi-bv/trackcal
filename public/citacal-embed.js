@@ -8,6 +8,7 @@
  *    <div data-citacal-embed data-event="15-min-call"></div>
  *
  * Optional container attributes:
+ * - data-host: public username used in /{host}/{event} booking URLs
  * - data-event: event slug
  * - data-height: initial iframe height (default: 760)
  *
@@ -129,6 +130,10 @@
   function buildSrc(container) {
     var params = new URLSearchParams();
     var eventSlug = container.getAttribute("data-event");
+    var hostSlug =
+      container.getAttribute("data-host") ||
+      (script && script.dataset ? script.dataset.citacalHost : "") ||
+      "";
     if (eventSlug) params.set("event", eventSlug);
 
     // Forward attribution params from parent page URL so embedded booking
@@ -156,10 +161,15 @@
     var embedId = randomId();
     params.set("embed_id", embedId);
 
+    var bookingUrl = null;
+    if (hostSlug && eventSlug) {
+      bookingUrl = baseUrl + "/" + hostSlug + "/" + eventSlug + (bookingParams ? "?" + bookingParams : "");
+    }
+
     return {
       embedId: embedId,
       eventSlug: eventSlug || null,
-      bookingUrl: baseUrl + "/book" + (bookingParams ? "?" + bookingParams : ""),
+      bookingUrl: bookingUrl,
       src: baseUrl + "/embed?" + params.toString(),
     };
   }
@@ -204,7 +214,7 @@
     body.style.color = "#4b5563";
 
     var link = document.createElement("a");
-    link.href = frame.bookingUrl || baseUrl + "/book";
+    link.href = frame.bookingUrl || baseUrl;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     link.textContent = "Open booking page";

@@ -1,9 +1,9 @@
 /**
  * Email sending via Resend.
  *
- * Two functions are exported:
- *   sendBookingConfirmationToAttendee — sent to the person who booked
- *   sendBookingNotificationToHost    — sent to the host when a new booking arrives
+ * Core lifecycle emails:
+ *   confirmation, cancellation, and reschedule
+ *   for both attendees and hosts
  *
  * Both are non-fatal: callers should wrap in try/catch.
  * If RESEND_API_KEY is not set, both functions return immediately (no-op).
@@ -64,7 +64,7 @@ function emailShell(body: string): string {
 <body>
 <div class="wrap">
   <div class="header">
-    <div class="header-logo">Track<span>Cal</span></div>
+    <div class="header-logo">Cita<span>Cal</span></div>
   </div>
   <div class="body">
     ${body}
@@ -92,6 +92,47 @@ export interface SendConfirmationParams {
   cancelUrl?: string | null;
 }
 
+export interface SendCancellationParams {
+  toEmail: string | string[];
+  date: string;
+  time: string;
+  eventName: string;
+  hostName: string;
+  location?: string | null;
+}
+
+export interface SendRescheduleParams {
+  toEmail: string | string[];
+  date: string;
+  time: string;
+  previousDate: string;
+  previousTime: string;
+  durationMinutes: number;
+  eventName: string;
+  hostName: string;
+  location?: string | null;
+  rescheduleUrl?: string | null;
+  cancelUrl?: string | null;
+}
+
+function renderLocationRow(location?: string | null) {
+  return location
+    ? `<div class="detail-row"><span class="detail-label">Location</span><span class="detail-value">${location}</span></div>`
+    : "";
+}
+
+function renderActions(actions: Array<{ label: string; href: string; variant: "primary" | "ghost" }>) {
+  if (actions.length === 0) return "";
+  return `<hr class="divider" />
+    <p style="font-size:13px;color:#525252;margin:0 0 12px;">Need to make a change?</p>
+    ${actions
+      .map(
+        (action) =>
+          `<a href="${action.href}" class="action-btn ${action.variant === "primary" ? "btn-primary" : "btn-ghost"}">${action.label}</a>`
+      )
+      .join("")}`;
+}
+
 export async function sendBookingConfirmationToAttendee(
   p: SendConfirmationParams
 ): Promise<void> {
@@ -99,17 +140,11 @@ export async function sendBookingConfirmationToAttendee(
   if (!resend) return;
 
   const formattedDate = formatDate(p.date);
-  const locationRow = p.location
-    ? `<div class="detail-row"><span class="detail-label">Location</span><span class="detail-value">${p.location}</span></div>`
-    : "";
-
-  const actions =
-    p.rescheduleUrl || p.cancelUrl
-      ? `<hr class="divider" />
-         <p style="font-size:13px;color:#525252;margin:0 0 12px;">Need to make a change?</p>
-         ${p.rescheduleUrl ? `<a href="${p.rescheduleUrl}" class="action-btn btn-primary">Reschedule</a>` : ""}
-         ${p.cancelUrl ? `<a href="${p.cancelUrl}" class="action-btn btn-ghost">Cancel</a>` : ""}`
-      : "";
+  const locationRow = renderLocationRow(p.location);
+  const actions = renderActions([
+    ...(p.rescheduleUrl ? [{ label: "Reschedule", href: p.rescheduleUrl, variant: "primary" as const }] : []),
+    ...(p.cancelUrl ? [{ label: "Cancel", href: p.cancelUrl, variant: "ghost" as const }] : []),
+  ]);
 
   const html = emailShell(`
     <p class="title">Your booking is confirmed ✓</p>
@@ -133,7 +168,7 @@ export async function sendBookingConfirmationToAttendee(
 // ── Host notification ──────────────────────────────────────────────────────
 
 export interface SendHostNotificationParams {
-  toEmail: string;
+  toEmail: string | string[];
   hostName: string;
   attendeeName: string;
   attendeeEmail: string;
@@ -177,6 +212,121 @@ export async function sendBookingNotificationToHost(
     from: FROM,
     to: p.toEmail,
     subject: `New booking: ${p.eventName} with ${p.attendeeName} on ${formattedDate}`,
+    html,
+  });
+}
+
+export async function sendBookingCancellationToAttendee(
+  p: SendCancellationParams
+): Promise<void> {
+  const resend = getResend();
+  if (!resend) return;
+
+  const formattedDate = formatDate(p.date);
+  const html = emailShell(`
+    <p class="title">Your booking has been cancelled</p>
+    <p class="subtitle">This meeting with ${p.hostName} is no longer scheduled.</p>
+    <div class="detail-row"><span class="detail-label">Event</span><span class="detail-value">${p.eventName}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">${formattedDate}</span></div>
+    <div class="detail-row"><span class="detail-label">Time</span><span class="detail-value">${p.time}</span></div>
+    ${renderLocationRow(p.location)}
+  `);
+
+  await resend.emails.send({
+    from: FROM,
+    to: p.toEmail,
+    subject: `Cancelled: ${p.eventName} on ${formattedDate}`,
+    html,
+  });
+}
+
+export async function sendBookingCancellationToHost(
+  p: SendCancellationParams & {
+    attendeeName: string;
+    attendeeEmail: string;
+  }
+): Promise<void> {
+  const resend = getResend();
+  if (!resend) return;
+
+  const formattedDate = formatDate(p.date);
+  const html = emailShell(`
+    <p class="title">${p.attendeeName} cancelled their booking</p>
+    <p class="subtitle">This meeting has been removed from the schedule.</p>
+    <div class="detail-row"><span class="detail-label">Event</span><span class="detail-value">${p.eventName}</span></div>
+    <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value">${formattedDate}</span></div>
+    <div class="detail-row"><span class="detail-label">Time</span><span class="detail-value">${p.time}</span></div>
+    <div class="detail-row"><span class="detail-label">Attendee</span><span class="detail-value">${p.attendeeName}</span></div>
+    <div class="detail-row"><span class="detail-label">Email</span><span class="detail-value">${p.attendeeEmail}</span></div>
+    ${renderLocationRow(p.location)}
+  `);
+
+  await resend.emails.send({
+    from: FROM,
+    to: p.toEmail,
+    subject: `Cancelled: ${p.eventName} with ${p.attendeeName} on ${formattedDate}`,
+    html,
+  });
+}
+
+export async function sendBookingRescheduledToAttendee(
+  p: SendRescheduleParams
+): Promise<void> {
+  const resend = getResend();
+  if (!resend) return;
+
+  const formattedDate = formatDate(p.date);
+  const previousFormattedDate = formatDate(p.previousDate);
+  const html = emailShell(`
+    <p class="title">Your booking has been rescheduled</p>
+    <p class="subtitle">Your meeting with ${p.hostName} has a new time.</p>
+    <div class="detail-row"><span class="detail-label">Event</span><span class="detail-value">${p.eventName}</span></div>
+    <div class="detail-row"><span class="detail-label">Previous</span><span class="detail-value">${previousFormattedDate} at ${p.previousTime}</span></div>
+    <div class="detail-row"><span class="detail-label">New date</span><span class="detail-value">${formattedDate}</span></div>
+    <div class="detail-row"><span class="detail-label">New time</span><span class="detail-value">${p.time}</span></div>
+    <div class="detail-row"><span class="detail-label">Duration</span><span class="detail-value">${p.durationMinutes} min</span></div>
+    ${renderLocationRow(p.location)}
+    ${renderActions([
+      ...(p.rescheduleUrl ? [{ label: "Reschedule again", href: p.rescheduleUrl, variant: "primary" as const }] : []),
+      ...(p.cancelUrl ? [{ label: "Cancel", href: p.cancelUrl, variant: "ghost" as const }] : []),
+    ])}
+  `);
+
+  await resend.emails.send({
+    from: FROM,
+    to: p.toEmail,
+    subject: `Rescheduled: ${p.eventName} to ${formattedDate}`,
+    html,
+  });
+}
+
+export async function sendBookingRescheduledToHost(
+  p: SendRescheduleParams & {
+    attendeeName: string;
+    attendeeEmail: string;
+  }
+): Promise<void> {
+  const resend = getResend();
+  if (!resend) return;
+
+  const formattedDate = formatDate(p.date);
+  const previousFormattedDate = formatDate(p.previousDate);
+  const html = emailShell(`
+    <p class="title">${p.attendeeName} rescheduled their booking</p>
+    <p class="subtitle">The meeting now has a new time.</p>
+    <div class="detail-row"><span class="detail-label">Event</span><span class="detail-value">${p.eventName}</span></div>
+    <div class="detail-row"><span class="detail-label">Previous</span><span class="detail-value">${previousFormattedDate} at ${p.previousTime}</span></div>
+    <div class="detail-row"><span class="detail-label">New date</span><span class="detail-value">${formattedDate}</span></div>
+    <div class="detail-row"><span class="detail-label">New time</span><span class="detail-value">${p.time}</span></div>
+    <div class="detail-row"><span class="detail-label">Attendee</span><span class="detail-value">${p.attendeeName}</span></div>
+    <div class="detail-row"><span class="detail-label">Email</span><span class="detail-value">${p.attendeeEmail}</span></div>
+    ${renderLocationRow(p.location)}
+  `);
+
+  await resend.emails.send({
+    from: FROM,
+    to: p.toEmail,
+    subject: `Rescheduled: ${p.eventName} with ${p.attendeeName} to ${formattedDate}`,
     html,
   });
 }

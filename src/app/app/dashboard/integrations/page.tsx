@@ -7,6 +7,7 @@
 
 import { createServerClient } from "@/lib/supabase";
 import DashboardNav from "@/components/dashboard/DashboardNav";
+import AnalyticsIdsEditor from "@/components/dashboard/AnalyticsIdsEditor";
 import WebhookUrlEditor from "@/components/dashboard/WebhookUrlEditor";
 
 // ── Tiny layout helpers ────────────────────────────────────────────────────────
@@ -114,7 +115,7 @@ function PayloadBlock({ code }: { code: string }) {
 export default async function IntegrationsPage() {
   const db = createServerClient();
   const [{ data: hostSettings }, { count: activeLinksCount }] = await Promise.all([
-    db.from("host_settings").select("webhook_urls").limit(1).maybeSingle(),
+    db.from("host_settings").select("webhook_urls, google_analytics_id, google_tag_manager_id, meta_pixel_id, linkedin_partner_id").limit(1).maybeSingle(),
     db.from("event_types").select("id", { count: "exact", head: true }).eq("is_active", true),
   ]);
 
@@ -125,9 +126,9 @@ export default async function IntegrationsPage() {
   "occurred_at": "2026-03-03T09:00:00.000Z",
   "booking": {
     "id": "b1a2c3d4-...",
-    "manage_url": "https://your-citacal.com/manage/...",
-    "reschedule_url": "https://your-citacal.com/manage/...?action=reschedule",
-    "cancel_url": "https://your-citacal.com/manage/...?action=cancel",
+    "manage_url": "https://your-citacal.com/manage/eyJ...",
+    "reschedule_url": "https://your-citacal.com/reschedule/eyJ...",
+    "cancel_url": "https://your-citacal.com/manage/eyJ...",
     "event_slug": "30-min-demo",
     "date": "2026-03-10",
     "time": "02:00 PM",
@@ -198,6 +199,19 @@ export default async function IntegrationsPage() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
 
+          <div className="tc-card" style={{ padding: "var(--space-6)" }}>
+            <SectionHeading>Analytics tags</SectionHeading>
+            <SectionDesc>
+              Add your Google Analytics 4 and Google Tag Manager IDs so CitaCal can load them on your public pages and booking links.
+            </SectionDesc>
+            <AnalyticsIdsEditor
+              initialGaId={(hostSettings as { google_analytics_id?: string | null } | null)?.google_analytics_id ?? null}
+              initialGtmId={(hostSettings as { google_tag_manager_id?: string | null } | null)?.google_tag_manager_id ?? null}
+              initialMetaPixelId={(hostSettings as { meta_pixel_id?: string | null } | null)?.meta_pixel_id ?? null}
+              initialLinkedinPartnerId={(hostSettings as { linkedin_partner_id?: string | null } | null)?.linkedin_partner_id ?? null}
+            />
+          </div>
+
           {/* ── Webhook URLs ─────────────────────────────────────────────── */}
           <div className="tc-card" style={{ padding: "var(--space-6)" }}>
             <SectionHeading>Webhook URLs</SectionHeading>
@@ -212,7 +226,7 @@ export default async function IntegrationsPage() {
           <div className="tc-card" style={{ padding: "var(--space-6)" }}>
             <SectionHeading>Connect to Zapier</SectionHeading>
             <SectionDesc>
-              Use Zapier's free "Webhooks by Zapier" trigger to receive CitaCal bookings and route them to 6,000+
+              Use Zapier&apos;s free &quot;Webhooks by Zapier&quot; trigger to receive CitaCal bookings and route them to 6,000+
               apps — Slack, HubSpot, Salesforce, Notion, and more.
             </SectionDesc>
 
@@ -266,7 +280,7 @@ export default async function IntegrationsPage() {
                     <>
                       Choose what to do with each booking — add a row to Google Sheets, create a HubSpot contact,
                       post a Slack message, tag a lead in your CRM, etc. Map fields from the webhook payload
-                      (e.g. <InlineCode>booking.name</InlineCode>, <InlineCode>utm.source</InlineCode>) to your app's fields.
+                      (e.g. <InlineCode>booking.name</InlineCode>, <InlineCode>utm.source</InlineCode>) to your app&apos;s fields.
                     </>
                   ),
                 },
@@ -364,7 +378,7 @@ export default async function IntegrationsPage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", marginBottom: "var(--space-5)" }}>
               {[
-                { header: "x-citacal-event", desc: "Always booking.confirmed" },
+                { header: "x-citacal-event", desc: "booking.confirmed, booking.cancelled, booking.rescheduled, or booking.status_changed" },
                 { header: "x-citacal-delivery-id", desc: "UUID — unique per delivery, useful for deduplication" },
                 { header: "x-citacal-timestamp", desc: "Unix timestamp (seconds) when the request was sent" },
                 { header: "x-citacal-signature", desc: "HMAC-SHA256 of timestamp.body using CITACAL_WEBHOOK_SECRET (only if env var is set)" },

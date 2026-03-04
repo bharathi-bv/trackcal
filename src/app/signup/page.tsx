@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createAuthBrowserClient } from "@/lib/supabase-browser";
 
 const GoogleIcon = () => (
@@ -25,12 +26,22 @@ const MicrosoftIcon = () => (
 
 export default function SignupPage() {
   const supabase = createAuthBrowserClient();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [done, setDone] = React.useState(false);
+
+  const authErrorMessage = React.useMemo(() => {
+    const authError = searchParams.get("auth_error");
+    if (!authError) return null;
+    if (authError === "session_expired") {
+      return "Your Google or Microsoft sign-in session expired. Please try again.";
+    }
+    return "We couldn't complete that sign-in. Please try again.";
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,7 +58,16 @@ export default function SignupPage() {
     });
 
     if (error) {
-      setError(error.message);
+      const normalized = error.message.toLowerCase();
+      if (
+        normalized.includes("already registered") ||
+        normalized.includes("user already registered") ||
+        normalized.includes("already exists")
+      ) {
+        setError("An account already exists for this email. Sign in instead or reset your password.");
+      } else {
+        setError(error.message);
+      }
       setLoading(false);
       return;
     }
@@ -149,13 +169,31 @@ export default function SignupPage() {
         }}
       >
         <div style={{ marginBottom: "var(--space-8)" }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>
-            CitaCal
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            <span><span style={{ fontWeight: 400 }}>Cita</span>Cal</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.25)", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.05em", lineHeight: 1 }}>BETA</span>
           </h1>
           <p style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: "var(--space-1)", margin: 0 }}>
-            Create your account
+            Create your account or continue with an existing one
           </p>
         </div>
+
+        {authErrorMessage && (
+          <div
+            style={{
+              marginBottom: "var(--space-4)",
+              padding: "12px 14px",
+              borderRadius: "var(--radius-lg)",
+              background: "rgba(245, 158, 11, 0.08)",
+              border: "1px solid rgba(245, 158, 11, 0.2)",
+              color: "#92400e",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            {authErrorMessage}
+          </div>
+        )}
 
         {/* OAuth buttons */}
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
@@ -223,7 +261,16 @@ export default function SignupPage() {
           </div>
 
           {error && (
-            <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{error}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{error}</p>
+              {error.includes("already exists") && (
+                <p style={{ fontSize: 13, margin: 0 }}>
+                  <Link href="/login" style={{ color: "var(--blue-400)", fontWeight: 600 }}>
+                    Go to sign in
+                  </Link>
+                </p>
+              )}
+            </div>
           )}
 
           <button type="submit" className="tc-btn tc-btn--primary" style={{ width: "100%" }} disabled={loading}>

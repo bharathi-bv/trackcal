@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -14,6 +15,7 @@ import {
 } from "@/lib/event-type-config";
 import AvailabilitySchedulesPanel from "@/components/dashboard/AvailabilitySchedulesPanel";
 import WeeklyAvailabilityEditor from "@/components/dashboard/WeeklyAvailabilityEditor";
+import { buildPublicBookingUrl } from "@/lib/public-booking-links";
 import type {
   CollectiveSlotTier,
   TeamAvailabilityMember,
@@ -247,10 +249,14 @@ function normalizeUtmLinks(value: unknown): UtmLinkPreset[] {
   });
 }
 
-function buildUtmLink(baseUrl: string, slug: string, preset: UtmLinkPreset) {
+function buildUtmLink(
+  baseUrl: string,
+  hostPublicSlug: string,
+  slug: string,
+  preset: UtmLinkPreset
+) {
   const fallbackBase = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
-  const url = new URL("/book", baseUrl || fallbackBase);
-  url.searchParams.set("event", slug);
+  const url = new URL(buildPublicBookingUrl(baseUrl || fallbackBase, hostPublicSlug, slug));
   UTM_FIELDS.forEach((field) => {
     const value = preset[field.key].trim();
     if (value) url.searchParams.set(field.key, value);
@@ -550,6 +556,7 @@ export default function EventTypesClient({
   bookingStats = {},
   availableMembers = [],
   bookingBaseUrl = "",
+  hostPublicSlug,
   zoomConnected = false,
 }: {
   initialEventTypes: EventType[];
@@ -557,6 +564,7 @@ export default function EventTypesClient({
   bookingStats?: Record<string, EventStats>;
   availableMembers?: TeamMember[];
   bookingBaseUrl?: string;
+  hostPublicSlug: string;
   zoomConnected?: boolean;
 }) {
   const router = useRouter();
@@ -1108,7 +1116,7 @@ export default function EventTypesClient({
   }
 
   async function copyLink(slug: string) {
-    const link = `${appUrl}/book?event=${slug}`;
+    const link = buildPublicBookingUrl(appUrl, hostPublicSlug, slug);
     await navigator.clipboard.writeText(link);
     setCopied(slug);
     toast.success("Link copied");
@@ -1116,7 +1124,7 @@ export default function EventTypesClient({
   }
 
   async function copyUtmLink(slug: string, preset: UtmLinkPreset) {
-    const link = buildUtmLink(appUrl, slug, preset);
+    const link = buildUtmLink(appUrl, hostPublicSlug, slug, preset);
     await navigator.clipboard.writeText(link);
     const copyKey = `${slug}:${preset.id}`;
     setCopiedUtm(copyKey);
@@ -1424,7 +1432,7 @@ export default function EventTypesClient({
 
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-2)", flexWrap: "wrap" }}>
                     <code style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--surface-subtle)", padding: "2px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
-                      /book?event={et.slug}
+                      {`/${hostPublicSlug}/${et.slug}`}
                     </code>
                     <button
                       className="tc-btn tc-btn--ghost tc-btn--sm"
@@ -1433,7 +1441,7 @@ export default function EventTypesClient({
                     >
                       {copied === et.slug ? "✓ Copied" : "Copy link"}
                     </button>
-                    <a href={`/book?event=${et.slug}`} target="_blank" rel="noreferrer" className="tc-btn tc-btn--ghost tc-btn--sm" style={{ fontSize: 11, padding: "2px 8px", height: "auto" }}>
+                    <a href={`/${hostPublicSlug}/${et.slug}`} target="_blank" rel="noreferrer" className="tc-btn tc-btn--ghost tc-btn--sm" style={{ fontSize: 11, padding: "2px 8px", height: "auto" }}>
                       Open ↗
                     </a>
                     <button
@@ -1566,7 +1574,7 @@ export default function EventTypesClient({
                       </div>
                     ) : (
                       et.utm_links.map((preset, index) => {
-                        const generatedLink = buildUtmLink(appUrl, et.slug, preset);
+                        const generatedLink = buildUtmLink(appUrl, hostPublicSlug, et.slug, preset);
                         const copiedKey = `${et.slug}:${preset.id}`;
                         return (
                           <div
@@ -1702,7 +1710,7 @@ export default function EventTypesClient({
                           <input
                             className="tc-input"
                             readOnly
-                            value={buildUtmLink(appUrl, et.slug, utmEditor[et.id] ?? createUtmPreset())}
+                            value={buildUtmLink(appUrl, hostPublicSlug, et.slug, utmEditor[et.id] ?? createUtmPreset())}
                           />
                           <span className="tc-form-hint">Any blank UTM field is omitted from the final link.</span>
                         </div>
@@ -1849,7 +1857,7 @@ export default function EventTypesClient({
               <div className="tc-form-field">
                 <label className="tc-form-label">URL slug</label>
                 <input type="text" className="tc-input" placeholder="15-min-intro-call" value={form.slug} onChange={(e) => updateForm("slug", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} />
-                <span className="tc-form-hint">Booking URL: /book?event={form.slug || "your-slug"}</span>
+                <span className="tc-form-hint">{`Booking URL: /${hostPublicSlug}/${form.slug || "your-slug"}`}</span>
               </div>
 
               <div className="tc-form-field">
@@ -1916,10 +1924,10 @@ export default function EventTypesClient({
                       <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "4px 0 0" }}>Each booking will get a unique Zoom link in the calendar invite and confirmation email.</p>
                     </div>
                     <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
-                      <a href="/api/auth/zoom" className="tc-btn tc-btn--secondary tc-btn--sm" style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", textDecoration: "none" }}>
+                      <Link href="/api/auth/zoom" className="tc-btn tc-btn--secondary tc-btn--sm" style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", textDecoration: "none" }}>
                         <svg width="14" height="14" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="8" fill="#2D8CFF"/><path d="M8 14h16a2 2 0 012 2v8a2 2 0 01-2 2H8a2 2 0 01-2-2v-8a2 2 0 012-2z" fill="white"/><path d="M26 18l8-4v12l-8-4v-4z" fill="white"/></svg>
                         Connect Zoom
-                      </a>
+                      </Link>
                       <span style={{ fontSize: 11, color: "var(--text-tertiary)" }}>or enter a static fallback URL below</span>
                     </div>
                     <div className="tc-form-field" style={{ marginBottom: 0 }}>
@@ -2446,7 +2454,7 @@ export default function EventTypesClient({
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--text-tertiary)" }}>Live Preview</span>
                 {form.slug && (
-                  <a href={`/book?event=${form.slug}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--color-primary)", textDecoration: "none", fontWeight: 600 }}>Open ↗</a>
+                  <a href={`/${hostPublicSlug}/${form.slug}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--color-primary)", textDecoration: "none", fontWeight: 600 }}>Open ↗</a>
                 )}
               </div>
 

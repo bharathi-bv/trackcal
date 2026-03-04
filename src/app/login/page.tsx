@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createAuthBrowserClient } from "@/lib/supabase-browser";
 
 const GoogleIcon = () => (
@@ -26,12 +26,22 @@ const MicrosoftIcon = () => (
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createAuthBrowserClient();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const authErrorMessage = React.useMemo(() => {
+    const authError = searchParams.get("auth_error");
+    if (!authError) return null;
+    if (authError === "session_expired") {
+      return "Your Google or Microsoft sign-in session expired. Please try again.";
+    }
+    return "We couldn't complete that sign-in. Please try again.";
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -89,13 +99,31 @@ export default function LoginPage() {
       >
         {/* Logo */}
         <div style={{ marginBottom: "var(--space-8)" }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>
-            CitaCal
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            <span><span style={{ fontWeight: 400 }}>Cita</span>Cal</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.25)", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.05em", lineHeight: 1 }}>BETA</span>
           </h1>
           <p style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: "var(--space-1)", margin: 0 }}>
             Sign in to your account
           </p>
         </div>
+
+        {authErrorMessage && (
+          <div
+            style={{
+              marginBottom: "var(--space-4)",
+              padding: "12px 14px",
+              borderRadius: "var(--radius-lg)",
+              background: "rgba(245, 158, 11, 0.08)",
+              border: "1px solid rgba(245, 158, 11, 0.2)",
+              color: "#92400e",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            {authErrorMessage}
+          </div>
+        )}
 
         {/* OAuth buttons */}
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>

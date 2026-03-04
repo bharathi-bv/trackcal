@@ -21,18 +21,13 @@ import {
 import { createHostCalendarEvent } from "@/lib/host-calendar";
 import { isZoomConnected, createZoomMeeting } from "@/lib/zoom";
 import { requireApiUser } from "@/lib/api-auth";
-import { sendBookingConfirmedWebhooks } from "@/lib/webhooks";
-import { appendRow } from "@/lib/google-sheets";
-import {
-  sendBookingConfirmationToAttendee,
-  sendBookingNotificationToHost,
-} from "@/lib/email";
 import {
   appendBookingActionLinks,
   buildBookingActionUrls,
   createManageToken,
   resolvePublicBaseUrl,
 } from "@/lib/booking-manage";
+import { runBookingSideEffects } from "@/lib/booking-side-effects";
 import {
   findSlotMeta,
   getSelectedTeamMembers,
@@ -307,14 +302,11 @@ export async function POST(request: Request) {
     }
     stageMs.event_type_lookup = Date.now() - startedAt;
 
-    const [{ data: host }, { data: { users: authUsers } = { users: [] } }] = await Promise.all([
-      db.from("host_settings").select("host_name, webhook_urls, booking_base_url").limit(1).maybeSingle(),
-      db.auth.admin.listUsers({ perPage: 1 }).catch(() => ({ data: { users: [] } })),
+    const [{ data: host }] = await Promise.all([
+      db.from("host_settings").select("host_name, booking_base_url").limit(1).maybeSingle(),
     ]);
     stageMs.host_settings_lookup = Date.now() - startedAt;
     const hostName = host?.host_name?.trim() || "CitaCal Host";
-    const hostEmail: string | null =
-      (authUsers as Array<{ email?: string }>)[0]?.email ?? null;
 
     const summary = titleTemplate
       ? titleTemplate
@@ -683,131 +675,40 @@ export async function POST(request: Request) {
         : null;
     stageMs.assigned_member_lookup = Date.now() - startedAt;
 
-    // ── Server-side booking webhooks (non-fatal) ────────────────────────────
-    const envWebhook = process.env.CITACAL_BOOKING_WEBHOOK_URL?.trim();
-    const envWebhookUrls = envWebhook
-      ? envWebhook.split(",").map((u) => u.trim()).filter(Boolean)
-      : [];
-    const configuredWebhookUrls = Array.isArray(host?.webhook_urls)
-      ? host.webhook_urls.filter((u): u is string => typeof u === "string")
-      : [];
-    const webhookUrls = [...new Set([...configuredWebhookUrls, ...envWebhookUrls])];
-
-    if (webhookUrls.length > 0) {
-      const payload = {
-        event: "booking.confirmed" as const,
-        occurred_at: new Date().toISOString(),
-        booking: {
-          id: bookingId,
-          manage_url: manageUrl,
-          reschedule_url: actionUrls?.reschedule ?? null,
-          cancel_url: actionUrls?.cancel ?? null,
-          event_slug: event_slug || null,
-          date,
-          time,
-          name: normalizedName,
-          email: normalizedEmail,
-          phone: normalizedPhone,
-          notes: normalizedNotes,
-          status: "confirmed",
-          assigned_to: assignedMemberId,
-          assigned_host_ids: assignedHostIds,
-          custom_answers: (custom_answers && typeof custom_answers === "object" && !Array.isArray(custom_answers))
-            ? (custom_answers as Record<string, string | string[]>)
-            : null,
-        },
-        assigned_member: assignedMember,
-        assigned_hosts: assignedHostsResponse,
-        utm: {
-          source: utm_source || null,
-          medium: utm_medium || null,
-          campaign: utm_campaign || null,
-          term: utm_term || null,
-          content: utm_content || null,
-        },
-        click_ids: {
-          gclid: gclid || null,
-          fbclid: fbclid || null,
-          li_fat_id: li_fat_id || null,
-          ttclid: ttclid || null,
-          msclkid: msclkid || null,
-        },
-      };
-
-      try {
-        await sendBookingConfirmedWebhooks({
-          urls: webhookUrls,
-          payload,
-          secret: process.env.CITACAL_WEBHOOK_SECRET ?? null,
-        });
-      } catch (webhookErr) {
-        console.warn("[bookings] webhook dispatch failed (non-fatal):", webhookErr);
-      }
-    }
-    stageMs.webhooks = Date.now() - startedAt;
-
-    // ── Google Sheets append (non-fatal) ────────────────────────────────────
-    appendRow({
-      id: bookingId,
-      created_at: new Date().toISOString(),
-      date: String(date),
-      time: String(time),
-      name: String(name),
-      email: String(email),
-      phone: typeof phone === "string" ? phone : null,
-      notes: typeof notes === "string" ? notes : null,
-      status: "confirmed",
-      event_slug: event_slug ? String(event_slug) : null,
-      assigned_to: assignedMemberId ?? null,
-      utm_source: typeof utm_source === "string" ? utm_source : null,
-      utm_medium: typeof utm_medium === "string" ? utm_medium : null,
-      utm_campaign: typeof utm_campaign === "string" ? utm_campaign : null,
-      utm_term: typeof utm_term === "string" ? utm_term : null,
-      utm_content: typeof utm_content === "string" ? utm_content : null,
-      gclid: typeof gclid === "string" ? gclid : null,
-      fbclid: typeof fbclid === "string" ? fbclid : null,
-      li_fat_id: typeof li_fat_id === "string" ? li_fat_id : null,
-      ttclid: typeof ttclid === "string" ? ttclid : null,
-      msclkid: typeof msclkid === "string" ? msclkid : null,
-      zoom_meeting_id: zoomMeetingId,
-      custom_answers: (custom_answers && typeof custom_answers === "object" && !Array.isArray(custom_answers))
-        ? (custom_answers as Record<string, string | string[]>)
-        : null,
-    }); // intentionally not awaited — must never block booking response
-
-    // ── Transactional emails (non-fatal) ─────────────────────────────────────
-    // Fire-and-forget: email failures never block the booking confirmation.
-    const emailParams = {
-      toName: normalizedName,
-      toEmail: normalizedEmail,
-      date: String(date),
-      time: String(time),
-      durationMinutes,
-      eventName,
-      hostName,
-      location: location || null,
-      rescheduleUrl: actionUrls?.reschedule ?? null,
-      cancelUrl: actionUrls?.cancel ?? null,
-    };
-    sendBookingConfirmationToAttendee(emailParams).catch((err) =>
-      console.warn("[bookings] attendee confirmation email failed (non-fatal):", err)
-    );
-    if (hostEmail) {
-      sendBookingNotificationToHost({
-        toEmail: hostEmail,
-        hostName,
-        attendeeName: normalizedName,
-        attendeeEmail: normalizedEmail,
+    await runBookingSideEffects({
+      db,
+      kind: "confirmed",
+      actionUrls,
+      booking: {
+        id: bookingId,
+        created_at: new Date().toISOString(),
         date: String(date),
         time: String(time),
-        durationMinutes,
-        eventName,
-        location: location || null,
-        manageUrl,
-      }).catch((err) =>
-        console.warn("[bookings] host notification email failed (non-fatal):", err)
-      );
-    }
+        name: normalizedName,
+        email: normalizedEmail,
+        phone: normalizedPhone,
+        notes: normalizedNotes,
+        status: "confirmed",
+        event_slug: event_slug ? String(event_slug) : null,
+        assigned_to: assignedMemberId,
+        assigned_host_ids: assignedHostIds,
+        zoom_meeting_id: zoomMeetingId,
+        custom_answers: (custom_answers && typeof custom_answers === "object" && !Array.isArray(custom_answers))
+          ? (custom_answers as Record<string, string | string[]>)
+          : null,
+        utm_source: typeof utm_source === "string" ? utm_source : null,
+        utm_medium: typeof utm_medium === "string" ? utm_medium : null,
+        utm_campaign: typeof utm_campaign === "string" ? utm_campaign : null,
+        utm_term: typeof utm_term === "string" ? utm_term : null,
+        utm_content: typeof utm_content === "string" ? utm_content : null,
+        gclid: typeof gclid === "string" ? gclid : null,
+        fbclid: typeof fbclid === "string" ? fbclid : null,
+        li_fat_id: typeof li_fat_id === "string" ? li_fat_id : null,
+        ttclid: typeof ttclid === "string" ? ttclid : null,
+        msclkid: typeof msclkid === "string" ? msclkid : null,
+      },
+    });
+    stageMs.side_effects = Date.now() - startedAt;
 
     return respond(
       {
@@ -820,7 +721,6 @@ export async function POST(request: Request) {
       {
         event_slug: event_slug || null,
         assigned_member: Boolean(assignedMemberId),
-        webhook_targets: webhookUrls.length,
         stages_ms: stageMs,
       }
     );

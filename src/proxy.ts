@@ -8,7 +8,8 @@
  * IMPORTANT: createServerClient here uses request.cookies (not next/headers cookies())
  * because middleware runs before the request context is fully set up.
  *
- * Matcher excludes: static files, images, API routes, and /book (public booking page).
+ * Matcher excludes: static files, images, and API routes. Public booking pages
+ * may still pass through this middleware, but only /app/* is auth-protected.
  */
 
 import { createServerClient } from "@supabase/ssr";
@@ -64,6 +65,6 @@ export default async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Exclude: Next.js internals, static files, API routes, and public pages (/book, /embed)
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api|book|embed).*)"],
+  // Exclude: Next.js internals, static files, and API routes.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api).*)"],
 };

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { cleanupBookingArtifacts } from "@/lib/booking-calendars";
+import { runBookingSideEffects } from "@/lib/booking-side-effects";
 import { createServerClient } from "@/lib/supabase";
 import { requireApiUser } from "@/lib/api-auth";
-import { deleteZoomMeeting } from "@/lib/zoom";
 
 const statusSchema = z.object({
   status: z.string(),
@@ -41,24 +42,23 @@ export async function PATCH(
   }
 
   const db = createServerClient();
+  const { data: existingBooking } = await db
+    .from("bookings")
+    .select(
+      "id, created_at, date, time, status, name, email, phone, notes, event_slug, assigned_to, assigned_host_ids, calendar_event_id, calendar_events, zoom_meeting_id, custom_answers, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, li_fat_id, ttclid, msclkid"
+    )
+    .eq("id", id)
+    .maybeSingle();
 
-  // If cancelling, fetch zoom_meeting_id first for soft-fail cleanup
-  if (normalizedStatus === "cancelled") {
-    try {
-      const { data: booking } = await db
-        .from("bookings")
-        .select("zoom_meeting_id")
-        .eq("id", id)
-        .maybeSingle();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const zoomMeetingId = (booking as any)?.zoom_meeting_id as string | null | undefined;
-      if (zoomMeetingId) {
-        await deleteZoomMeeting(zoomMeetingId);
-      }
-    } catch (zoomErr) {
-      // Non-fatal: do not block status update if Zoom cleanup fails
-      console.warn("[bookings/status] Zoom meeting deletion failed (non-fatal):", zoomErr);
-    }
+  if (!existingBooking) {
+    return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+  }
+
+  if (existingBooking.status === normalizedStatus) {
+    return NextResponse.json({
+      id: existingBooking.id,
+      status: normalizeStatus(existingBooking.status) ?? existingBooking.status,
+    });
   }
 
   async function updateStatus(statusToPersist: string) {
@@ -79,6 +79,35 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+
+  if (normalizedStatus === "cancelled") {
+    try {
+      await cleanupBookingArtifacts({
+        booking: {
+          assigned_to: existingBooking.assigned_to,
+          calendar_event_id: existingBooking.calendar_event_id,
+          calendar_events: existingBooking.calendar_events,
+          zoom_meeting_id: existingBooking.zoom_meeting_id,
+        },
+        db,
+      });
+    } catch (cleanupErr) {
+      console.warn("[bookings/status] booking cleanup failed (non-fatal):", cleanupErr);
+    }
+  }
+
+  await runBookingSideEffects({
+    db,
+    kind: normalizedStatus === "cancelled" ? "cancelled" : "status_changed",
+    changes: {
+      previous_status: existingBooking.status,
+    },
+    booking: {
+      ...existingBooking,
+      status: normalizedStatus,
+    },
+  });
+
   return NextResponse.json({
     id: data.id,
     status: normalizeStatus(data.status) ?? data.status,

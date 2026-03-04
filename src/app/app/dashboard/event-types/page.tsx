@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { getAvailabilitySchedules } from "@/lib/availability-schedules";
 import { createServerClient } from "@/lib/supabase";
+import { ensureHostPublicSlug } from "@/lib/public-booking-links";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import EventTypesClient from "@/components/dashboard/EventTypesClient";
 
@@ -22,9 +23,10 @@ export default async function EventTypesPage() {
     ? `${proto}://${host}`
     : process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "https://citacal.com";
 
-  const [{ data: eventTypes }, { data: hostSettings }, { data: statsRows }, { data: teamMembers }, availabilitySchedules] = await Promise.all([
+  const [hostPublicSlug, { data: eventTypes }, { data: hostSettings }, { data: statsRows }, { data: teamMembers }, availabilitySchedules] = await Promise.all([
+    ensureHostPublicSlug({ db }),
     db.from("event_types").select("*").order("created_at", { ascending: true }),
-    db.from("host_settings").select("google_refresh_token, microsoft_refresh_token, booking_base_url, zoom_refresh_token").limit(1).maybeSingle(),
+    db.from("host_settings").select("google_refresh_token, microsoft_refresh_token, booking_base_url, public_slug, zoom_refresh_token").limit(1).maybeSingle(),
     db.rpc("get_event_type_booking_stats", { month_prefix: thisMonthPrefix }),
     db.from("team_members").select("id, name, email, photo_url, google_refresh_token, microsoft_refresh_token").eq("is_active", true).order("created_at", { ascending: true }),
     getAvailabilitySchedules(db),
@@ -67,6 +69,7 @@ export default async function EventTypesPage() {
           bookingStats={bookingStats}
           availableMembers={teamMembers ?? []}
           bookingBaseUrl={bookingBaseUrl}
+          hostPublicSlug={hostSettings?.public_slug ?? hostPublicSlug}
           zoomConnected={Boolean((hostSettings as { zoom_refresh_token?: string | null } | null)?.zoom_refresh_token)}
         />
       </main>
