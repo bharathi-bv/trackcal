@@ -10,7 +10,7 @@
  *   booking_completed — on confirmation (the conversion event)
  *
  * Both events carry the full UTM + click-ID context — this is the core
- * TrackCal value prop. Ad platforms get accurate conversion attribution
+ * CitaCal value prop. Ad platforms get accurate conversion attribution
  * instead of losing it at the Calendly iframe boundary.
  *
  * Why no top-level mixpanel import: mixpanel-browser accesses browser globals
@@ -38,7 +38,7 @@ export function registerMixpanel(instance: typeof MixpanelLib) {
 }
 
 export function trackBookingStarted(utmParams: UtmParams) {
-  const props = { ...utmParams, product: "trackcal" };
+  const props = { ...utmParams, product: "citacal" };
 
   sendGAEvent("event", "booking_started", props);
 
@@ -50,7 +50,7 @@ export function trackBookingCompleted(data: BookingCompletedData) {
     ...data.utmParams,
     date: data.date,
     time: data.time,
-    product: "trackcal",
+    product: "citacal",
   };
 
   sendGAEvent("event", "booking_completed", props);

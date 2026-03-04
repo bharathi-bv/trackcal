@@ -14,7 +14,7 @@ export default function SignOutButton() {
   }
 
   return (
-    <button className="btn btn-ghost btn-sm" onClick={handleSignOut}>
+    <button className="tc-btn tc-btn--ghost tc-btn--sm" onClick={handleSignOut}>
       Sign out
     </button>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 type EventType = {
@@ -17,9 +18,12 @@ export default function MeetingLinksClient({
   baseUrl: string;
 }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const resolvedBaseUrl =
+    baseUrl.replace(/\/+$/, "") ||
+    (typeof window !== "undefined" ? window.location.origin : "");
 
   function handleCopy(slug: string, id: string) {
-    const url = `${baseUrl}/book?event=${slug}`;
+    const url = `${resolvedBaseUrl}/book?event=${slug}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
@@ -29,7 +33,10 @@ export default function MeetingLinksClient({
   if (eventTypes.length === 0) {
     return (
       <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
-        No active event types. <a href="/app/dashboard/event-types" style={{ color: "var(--blue-400)" }}>Create one →</a>
+        No active event types.{" "}
+        <Link href="/app/dashboard/event-types" style={{ color: "var(--blue-400)" }}>
+          Create one →
+        </Link>
       </p>
     );
   }
@@ -37,7 +44,7 @@ export default function MeetingLinksClient({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
       {eventTypes.map((et) => {
-        const url = `${baseUrl}/book?event=${et.slug}`;
+        const url = `${resolvedBaseUrl}/book?event=${et.slug}`;
         const copied = copiedId === et.id;
         return (
           <div
@@ -54,7 +61,7 @@ export default function MeetingLinksClient({
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", minWidth: 0 }}>
-              <span className="badge badge-blue" style={{ flexShrink: 0 }}>
+              <span className="tc-pill tc-pill--primary" style={{ flexShrink: 0 }}>
                 {et.duration}m
               </span>
               <span
@@ -83,7 +90,7 @@ export default function MeetingLinksClient({
               </span>
             </div>
             <button
-              className={`btn btn-sm ${copied ? "btn-secondary" : "btn-ghost"}`}
+              className={`tc-btn tc-btn--sm ${copied ? "tc-btn--secondary" : "tc-btn--ghost"}`}
               style={{ flexShrink: 0, minWidth: 72 }}
               onClick={() => handleCopy(et.slug, et.id)}
             >

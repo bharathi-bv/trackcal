@@ -55,13 +55,13 @@ export default function CsvExportButton({ bookings }: { bookings: BookingRow[] }
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `trackcal-bookings-${new Date().toISOString().split("T")[0]}.csv`;
+    link.download = `citacal-bookings-${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
 
   return (
-    <button className="btn btn-secondary btn-sm" onClick={handleExport}>
+    <button className="tc-btn tc-btn--secondary tc-btn--sm" onClick={handleExport}>
       Export CSV
     </button>
   );

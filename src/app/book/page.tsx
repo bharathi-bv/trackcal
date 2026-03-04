@@ -1,5 +1,6 @@
 import BookingWizard from "@/components/booking/BookingWizard";
 import { createServerClient } from "@/lib/supabase";
+import type { CustomQuestion } from "@/lib/event-type-config";
 
 export default async function BookPage({
   searchParams,
@@ -15,7 +16,7 @@ export default async function BookPage({
     eventSlug
       ? db
           .from("event_types")
-          .select("id, name, slug, duration, description, start_hour, end_hour, slot_increment")
+          .select("id, name, slug, duration, description, start_hour, end_hour, slot_increment, custom_questions")
           .eq("slug", eventSlug)
           .eq("is_active", true)
           .maybeSingle()
@@ -29,6 +30,9 @@ export default async function BookPage({
 
   const eventType = eventTypeResult.data;
   const hostProfile = hostSettingsResult.data;
+  const customQuestions: CustomQuestion[] = Array.isArray(eventType?.custom_questions)
+    ? (eventType.custom_questions as CustomQuestion[])
+    : [];
 
   return (
     <main
@@ -45,6 +49,7 @@ export default async function BookPage({
               }
             : undefined
         }
+        customQuestions={customQuestions}
       />
     </main>
   );

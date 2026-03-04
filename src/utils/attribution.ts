@@ -4,7 +4,7 @@
  * Captures UTM parameters and ad platform click IDs from the URL,
  * persists them in localStorage with a 30-day expiry, and returns them.
  *
- * Why this matters: Calendly drops all click IDs in its iframe. TrackCal
+ * Why this matters: Calendly drops all click IDs in its iframe. CitaCal
  * captures them server-side at the booking moment so ad platforms get
  * accurate conversion data.
  */
@@ -36,7 +36,7 @@ const TRACKED_KEYS: (keyof UtmParams)[] = [
   "msclkid",
 ];
 
-const STORAGE_KEY = "trackcal_utm";
+const STORAGE_KEY = "citacal_utm";
 const EXPIRY_DAYS = 30;
 
 type StoredEntry = {

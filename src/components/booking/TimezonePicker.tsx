@@ -188,13 +188,28 @@ export default function TimezonePicker({
     return [...known, ...unknown];
   }, [filtered]);
 
-  // Resolve selected entry for trigger display
+  // Resolve selected entry for trigger display (falls back to computing directly from IANA string)
   const selected = React.useMemo(
     () => list.find((t) => t.iana === value),
     [list, value]
   );
 
-  // Compute current time live for the trigger (updated each render, not just at list-build)
+  // Compute trigger label directly from IANA string — works even before list is built
+  const triggerLabel = React.useMemo(() => {
+    if (selected) return `${selected.fullName} · ${selected.offsetStr}`;
+    // List not loaded yet — derive directly
+    try {
+      const now = new Date();
+      const fullName = getLongName(value, now);
+      const offsetMins = getOffsetMins(value, now);
+      const offsetStr = minsToOffsetStr(offsetMins);
+      return `${fullName} · ${offsetStr}`;
+    } catch {
+      return value.split("/").slice(1).join("/").replace(/_/g, " ") || value;
+    }
+  }, [selected, value]);
+
+  // Compute current time live for the trigger
   const liveTime = React.useMemo(() => {
     try {
       return new Date().toLocaleTimeString("en-US", {
@@ -207,10 +222,6 @@ export default function TimezonePicker({
       return "";
     }
   }, [value]);
-
-  const triggerLabel = selected
-    ? `${selected.fullName} · ${selected.offsetStr}`
-    : value.split("/").slice(1).join("/").replace(/_/g, " ") || value;
 
   return (
     <div ref={wrapperRef} style={{ position: "relative" }}>

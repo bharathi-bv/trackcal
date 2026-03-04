@@ -50,13 +50,18 @@ export async function PATCH(
     updatePayload.google_access_token = null;
     updatePayload.google_refresh_token = null;
     updatePayload.google_token_expiry = null;
+    updatePayload.google_calendar_ids = [];
+    updatePayload.microsoft_access_token = null;
+    updatePayload.microsoft_refresh_token = null;
+    updatePayload.microsoft_token_expiry = null;
+    updatePayload.microsoft_calendar_ids = [];
   }
 
   const { data, error } = await db
     .from("team_members")
     .update(updatePayload)
     .eq("id", id)
-    .select("id, name, email, photo_url, is_active, google_refresh_token, last_booking_at, created_at")
+    .select("id, name, email, photo_url, is_active, google_refresh_token, microsoft_refresh_token, last_booking_at, created_at")
     .single();
 
   if (error) {

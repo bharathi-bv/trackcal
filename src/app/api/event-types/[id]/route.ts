@@ -1,8 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getFallbackAvailabilityScheduleId } from "@/lib/availability-schedules";
 import { createServerClient } from "@/lib/supabase";
 import { requireApiUser } from "@/lib/api-auth";
 import { z } from "zod";
-import { normalizeWeeklyAvailability } from "@/lib/event-type-config";
+import {
+  getWeeklyAvailabilityValidationError,
+  normalizeAvailabilityBlockers,
+  normalizeWeeklyAvailability,
+} from "@/lib/event-type-config";
+import type { TeamSchedulingMode } from "@/lib/team-scheduling";
+
+const utmLinkSchema = z.object({
+  id: z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(240).optional().nullable(),
+  utm_source: z.string().trim().max(120).optional().nullable(),
+  utm_medium: z.string().trim().max(120).optional().nullable(),
+  utm_campaign: z.string().trim().max(200).optional().nullable(),
+  utm_term: z.string().trim().max(200).optional().nullable(),
+  utm_content: z.string().trim().max(200).optional().nullable(),
+});
+
+const rangeSchema = z.object({
+  start_hour: z.number().int().min(0).max(23),
+  end_hour: z.number().int().min(1).max(24),
+});
+
+const daySchema = z.object({
+  enabled: z.boolean(),
+  start_hour: z.number().int().min(0).max(23).optional(),
+  end_hour: z.number().int().min(1).max(24).optional(),
+  ranges: z.array(rangeSchema).optional(),
+});
 
 const patchSchema = z
   .object({
@@ -39,22 +67,60 @@ const patchSchema = z
     buffer_after_minutes: z.number().int().min(0).max(240).optional(),
     max_bookings_per_day: z.number().int().min(1).max(1000).nullable().optional(),
     max_bookings_per_slot: z.number().int().min(1).max(1000).nullable().optional(),
-    weekly_availability: z
-      .record(
-        z.string(),
-        z.object({
-          enabled: z.boolean(),
-          start_hour: z.number().int().min(0).max(23),
-          end_hour: z.number().int().min(1).max(24),
-        })
-      )
-      .nullable()
-      .optional(),
+    availability_schedule_id: z.string().uuid().nullable().optional(),
+    weekly_availability: z.record(z.string(), daySchema).nullable().optional(),
     blocked_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).nullable().optional(),
+    blocked_weekdays: z.array(z.number().int().min(0).max(6)).nullable().optional(),
     is_active: z.boolean().optional(),
     assigned_member_ids: z.array(z.string().uuid()).optional(),
+    team_scheduling_mode: z.enum(["round_robin", "collective"]).optional(),
+    collective_required_member_ids: z.array(z.string().uuid()).optional(),
+    collective_show_availability_tiers: z.boolean().optional(),
+    collective_min_available_hosts: z.number().int().min(1).max(1000).nullable().optional(),
+    utm_links: z.array(utmLinkSchema).optional(),
+    custom_questions: z.array(z.any()).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "No fields provided to update");
+
+function normalizeUtmLinks(value: z.infer<typeof utmLinkSchema>[]) {
+  return value.map((link) => ({
+    id: link.id?.trim() || crypto.randomUUID(),
+    description: link.description?.trim() || "",
+    utm_source: link.utm_source?.trim() || "",
+    utm_medium: link.utm_medium?.trim() || "",
+    utm_campaign: link.utm_campaign?.trim() || "",
+    utm_term: link.utm_term?.trim() || "",
+    utm_content: link.utm_content?.trim() || "",
+  }));
+}
+
+function validateTeamScheduling(data: {
+  assigned_member_ids: string[];
+  team_scheduling_mode: TeamSchedulingMode;
+  collective_required_member_ids: string[];
+  collective_show_availability_tiers: boolean;
+  collective_min_available_hosts: number | null | undefined;
+}) {
+  const assignedSet = new Set(data.assigned_member_ids);
+  const invalidRequired = data.collective_required_member_ids.find((id) => !assignedSet.has(id));
+  if (invalidRequired) {
+    return "Required hosts must also be selected in the team list.";
+  }
+
+  if (data.team_scheduling_mode !== "collective") return null;
+  if (data.assigned_member_ids.length === 0) {
+    return "Collective meetings require at least one assigned team member.";
+  }
+
+  if (
+    data.collective_min_available_hosts &&
+    data.collective_min_available_hosts > data.assigned_member_ids.length
+  ) {
+    return "Minimum available hosts cannot exceed the selected team members.";
+  }
+
+  return null;
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -78,7 +144,7 @@ export async function PATCH(
   const { data: current } = await db
     .from("event_types")
     .select(
-      "start_hour, end_hour, weekly_availability, booking_window_type, booking_window_start_date, booking_window_end_date"
+      "start_hour, end_hour, availability_schedule_id, weekly_availability, booking_window_type, booking_window_start_date, booking_window_end_date, assigned_member_ids, team_scheduling_mode, collective_required_member_ids, collective_show_availability_tiers, collective_min_available_hosts"
     )
     .eq("id", id)
     .maybeSingle();
@@ -93,15 +159,20 @@ export async function PATCH(
   }
   const nextWeekly =
     parsed.data.weekly_availability !== undefined
-      ? normalizeWeeklyAvailability(parsed.data.weekly_availability)
-      : normalizeWeeklyAvailability(current.weekly_availability);
-  for (const key of Object.keys(nextWeekly)) {
-    const day = nextWeekly[key];
-    if (day.enabled && day.start_hour >= day.end_hour) {
-      return NextResponse.json(
-        { error: `Invalid weekly availability for day ${key}: end must be after start.` },
-        { status: 400 }
-      );
+      ? parsed.data.weekly_availability === null
+        ? null
+        : normalizeWeeklyAvailability(parsed.data.weekly_availability)
+      : current.weekly_availability
+        ? normalizeWeeklyAvailability(current.weekly_availability)
+        : null;
+  const nextBlockers = normalizeAvailabilityBlockers({
+    dates: parsed.data.blocked_dates !== undefined ? parsed.data.blocked_dates ?? [] : [],
+    weekdays: parsed.data.blocked_weekdays !== undefined ? parsed.data.blocked_weekdays ?? [] : [],
+  });
+  if (nextWeekly) {
+    const validation = getWeeklyAvailabilityValidationError(nextWeekly);
+    if (validation) {
+      return NextResponse.json({ error: validation.message }, { status: 400 });
     }
   }
   const nextWindowType = parsed.data.booking_window_type ?? current.booking_window_type ?? "rolling";
@@ -122,6 +193,45 @@ export async function PATCH(
   if (nextWindowType === "fixed" && nextWindowStart && nextWindowEnd && nextWindowStart > nextWindowEnd) {
     return NextResponse.json(
       { error: "Booking window start must be before or equal to end date." },
+      { status: 400 }
+    );
+  }
+
+  const nextAssignedMemberIds = parsed.data.assigned_member_ids ?? current.assigned_member_ids ?? [];
+  const nextTeamSchedulingMode =
+    parsed.data.team_scheduling_mode ?? current.team_scheduling_mode ?? "round_robin";
+  const nextCollectiveRequiredMemberIds =
+    parsed.data.collective_required_member_ids ??
+    current.collective_required_member_ids ??
+    [];
+  const nextCollectiveShowAvailabilityTiers =
+    parsed.data.collective_show_availability_tiers ??
+    current.collective_show_availability_tiers ??
+    false;
+  const nextCollectiveMinAvailableHosts =
+    parsed.data.collective_min_available_hosts !== undefined
+      ? parsed.data.collective_min_available_hosts
+      : current.collective_min_available_hosts;
+  const nextAvailabilityScheduleId =
+    nextWeekly === null
+      ? parsed.data.availability_schedule_id !== undefined
+        ? parsed.data.availability_schedule_id
+        : current.availability_schedule_id ?? (await getFallbackAvailabilityScheduleId(db))
+      : null;
+
+  const teamSchedulingError = validateTeamScheduling({
+    assigned_member_ids: nextAssignedMemberIds,
+    team_scheduling_mode: nextTeamSchedulingMode,
+    collective_required_member_ids: nextCollectiveRequiredMemberIds,
+    collective_show_availability_tiers: nextCollectiveShowAvailabilityTiers,
+    collective_min_available_hosts: nextCollectiveMinAvailableHosts,
+  });
+  if (teamSchedulingError) {
+    return NextResponse.json({ error: teamSchedulingError }, { status: 400 });
+  }
+  if (!nextWeekly && !nextAvailabilityScheduleId) {
+    return NextResponse.json(
+      { error: "Select an availability schedule or add a custom schedule." },
       { status: 400 }
     );
   }
@@ -169,9 +279,29 @@ export async function PATCH(
         parsed.data.max_bookings_per_slot !== undefined
           ? parsed.data.max_bookings_per_slot || null
           : undefined,
-      weekly_availability: nextWeekly,
+      availability_schedule_id:
+        parsed.data.availability_schedule_id !== undefined || nextWeekly === null
+          ? nextAvailabilityScheduleId
+          : undefined,
+      weekly_availability:
+        parsed.data.weekly_availability !== undefined || nextWeekly === null ? nextWeekly : undefined,
       blocked_dates:
-        parsed.data.blocked_dates !== undefined ? parsed.data.blocked_dates ?? [] : undefined,
+        parsed.data.blocked_dates !== undefined ? nextBlockers.dates : undefined,
+      blocked_weekdays:
+        parsed.data.blocked_weekdays !== undefined ? nextBlockers.weekdays : undefined,
+      team_scheduling_mode: parsed.data.team_scheduling_mode ?? undefined,
+      collective_required_member_ids:
+        parsed.data.collective_required_member_ids ?? undefined,
+      collective_show_availability_tiers:
+        parsed.data.collective_show_availability_tiers ?? undefined,
+      collective_min_available_hosts:
+        parsed.data.collective_min_available_hosts !== undefined
+          ? parsed.data.collective_min_available_hosts || null
+          : undefined,
+      utm_links:
+        parsed.data.utm_links !== undefined
+          ? normalizeUtmLinks(parsed.data.utm_links)
+          : undefined,
     })
     .eq("id", id)
     .select()

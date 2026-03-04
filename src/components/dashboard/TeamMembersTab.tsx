@@ -9,6 +9,7 @@ export type TeamMember = {
   photo_url: string | null;
   is_active: boolean;
   google_refresh_token: string | null;
+  microsoft_refresh_token?: string | null;
   last_booking_at: string | null;
   created_at: string;
 };
@@ -111,7 +112,8 @@ export default function TeamMembersTab({
   }
 
   async function handleDisconnectCalendar(member: TeamMember) {
-    if (!confirm(`Disconnect ${member.name}'s Google Calendar?`)) return;
+    const providerLabel = member.microsoft_refresh_token ? "Outlook Calendar" : "Google Calendar";
+    if (!confirm(`Disconnect ${member.name}'s ${providerLabel}?`)) return;
     setDisconnectingId(member.id);
     try {
       const res = await fetch(`/api/team-members/${member.id}`, {
@@ -146,7 +148,7 @@ export default function TeamMembersTab({
       {/* Member list */}
       {members.length > 0 && (
         <div
-          className="card"
+          className="tc-card"
           style={{ padding: 0, overflow: "hidden" }}
         >
           {members.map((member, idx) => (
@@ -177,8 +179,8 @@ export default function TeamMembersTab({
                     {member.name}
                   </span>
                   {/* Calendar status badge */}
-                  {member.google_refresh_token ? (
-                    <span className="badge badge-green" style={{ fontSize: 10 }}>
+                  {member.google_refresh_token || member.microsoft_refresh_token ? (
+                    <span className="tc-pill tc-pill--success" style={{ fontSize: 10 }}>
                       <span
                         style={{
                           width: 5,
@@ -191,12 +193,12 @@ export default function TeamMembersTab({
                       Calendar connected
                     </span>
                   ) : (
-                    <span className="badge badge-amber" style={{ fontSize: 10 }}>
+                    <span className="tc-pill tc-pill--warning" style={{ fontSize: 10 }}>
                       Calendar not connected
                     </span>
                   )}
                   {!member.is_active && (
-                    <span className="badge badge-default" style={{ fontSize: 10 }}>
+                    <span className="tc-pill tc-pill--neutral" style={{ fontSize: 10 }}>
                       Inactive
                     </span>
                   )}
@@ -214,12 +216,12 @@ export default function TeamMembersTab({
               {/* Actions */}
               <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
                 {/* Disconnect Calendar — only shown when connected */}
-                {member.google_refresh_token && (
+                {(member.google_refresh_token || member.microsoft_refresh_token) && (
                   <button
-                    className="btn btn-ghost btn-sm"
+                    className="tc-btn tc-btn--ghost tc-btn--sm"
                     onClick={() => handleDisconnectCalendar(member)}
                     disabled={disconnectingId === member.id}
-                    title="Disconnect this member's Google Calendar"
+                    title="Disconnect this member's calendar"
                     style={{ color: "var(--text-tertiary)" }}
                   >
                     {disconnectingId === member.id ? "Disconnecting…" : "Disconnect calendar"}
@@ -228,7 +230,7 @@ export default function TeamMembersTab({
 
                 {/* Active toggle */}
                 <button
-                  className="btn btn-ghost btn-sm"
+                  className="tc-btn tc-btn--ghost tc-btn--sm"
                   onClick={() => handleToggleActive(member)}
                   title={member.is_active ? "Deactivate member" : "Activate member"}
                   style={{ color: member.is_active ? "var(--text-tertiary)" : "var(--success)" }}
@@ -238,7 +240,7 @@ export default function TeamMembersTab({
 
                 {/* Delete */}
                 <button
-                  className="btn btn-ghost btn-sm"
+                  className="tc-btn tc-btn--ghost tc-btn--sm"
                   onClick={() => handleDelete(member.id)}
                   title="Remove team member"
                   style={{ color: "var(--error)" }}
@@ -273,7 +275,7 @@ export default function TeamMembersTab({
       >
         <strong style={{ color: "var(--text-primary)" }}>How team member calendars work:</strong>
         <ol style={{ margin: "var(--space-2) 0 0", paddingLeft: "var(--space-5)", lineHeight: 1.7 }}>
-          <li>Add the member below — a TrackCal invite is emailed to them automatically.</li>
+          <li>Add the member below — a CitaCal invite is emailed to them automatically.</li>
           <li>They click the link, create their account, and land on their own settings page.</li>
           <li>They connect their Google Calendar themselves — no link-sharing needed.</li>
           <li>The badge on their card changes to <strong>Calendar connected</strong> once they do.</li>
@@ -281,16 +283,16 @@ export default function TeamMembersTab({
       </div>
 
       {/* Add member form */}
-      <div className="card" style={{ padding: "var(--space-5)" }}>
+      <div className="tc-card" style={{ padding: "var(--space-5)" }}>
         <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", margin: "0 0 var(--space-4)" }}>
           Add team member
         </h3>
         <form onSubmit={handleAddMember}>
           <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
-            <div className="form-field" style={{ flex: 1, minWidth: 160 }}>
-              <label className="form-label">Name</label>
+            <div className="tc-form-field" style={{ flex: 1, minWidth: 160 }}>
+              <label className="tc-form-label">Name</label>
               <input
-                className="input"
+                className="tc-input"
                 type="text"
                 placeholder="Sarah Chen"
                 value={newName}
@@ -298,10 +300,10 @@ export default function TeamMembersTab({
                 required
               />
             </div>
-            <div className="form-field" style={{ flex: 1, minWidth: 200 }}>
-              <label className="form-label">Email</label>
+            <div className="tc-form-field" style={{ flex: 1, minWidth: 200 }}>
+              <label className="tc-form-label">Email</label>
               <input
-                className="input"
+                className="tc-input"
                 type="email"
                 placeholder="sarah@company.com"
                 value={newEmail}
@@ -312,7 +314,7 @@ export default function TeamMembersTab({
             <div style={{ display: "flex", alignItems: "flex-end" }}>
               <button
                 type="submit"
-                className="btn btn-primary btn-sm"
+                className="tc-btn tc-btn--primary tc-btn--sm"
                 disabled={adding || !newName.trim() || !newEmail.trim()}
               >
                 {adding ? "Adding…" : "Add member"}

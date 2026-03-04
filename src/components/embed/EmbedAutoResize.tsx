@@ -20,7 +20,7 @@ export default function EmbedAutoResize() {
 
       window.parent.postMessage(
         {
-          type: "trackcal:embed:resize",
+          type: "citacal:embed:resize",
           height,
           embedId,
         },
@@ -29,7 +29,7 @@ export default function EmbedAutoResize() {
     };
 
     postHeight();
-    window.parent.postMessage({ type: "trackcal:embed:ready", embedId }, "*");
+    window.parent.postMessage({ type: "citacal:embed:ready", embedId }, "*");
 
     const ro = new ResizeObserver(() => postHeight());
     ro.observe(document.documentElement);

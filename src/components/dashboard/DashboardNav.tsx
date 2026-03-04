@@ -1,187 +1,95 @@
 import SignOutButton from "@/components/auth/SignOutButton";
 
-type Tab = "bookings" | "analytics" | "event-types" | "settings";
+type Tab = "bookings" | "analytics" | "event-types" | "integrations" | "settings";
 
 const TABS: { id: Tab; label: string; href: string }[] = [
-  { id: "bookings", label: "Bookings", href: "/app/dashboard" },
-  { id: "analytics", label: "Analytics", href: "/app/analytics" },
-  { id: "event-types", label: "Event Types", href: "/app/dashboard/event-types" },
-  { id: "settings", label: "Settings", href: "/app/dashboard/settings" },
+  { id: "bookings",      label: "Bookings",      href: "/app/dashboard" },
+  { id: "event-types",  label: "Scheduling",    href: "/app/dashboard/event-types" },
+  { id: "analytics",    label: "Analytics",     href: "/app/analytics" },
+  { id: "integrations", label: "Integrations",  href: "/app/dashboard/integrations" },
+  { id: "settings",     label: "Settings",      href: "/app/dashboard/settings" },
 ];
 
 export default function DashboardNav({
   activeTab,
-  calendarConnected,
+  activeLinks,
   email,
 }: {
   activeTab: Tab;
-  calendarConnected: boolean;
+  activeLinks: number;
   email: string;
 }) {
   return (
-    <nav
-      style={{
-        background: "var(--surface-page)",
-        borderBottom: "1px solid var(--border-default)",
-        position: "sticky",
-        top: 0,
-        zIndex: 200,
-      }}
-    >
-      <div
-        className="nav-inner-dashboard"
-        style={{
-          maxWidth: 1100,
-          margin: "0 auto",
-          padding: "0 var(--space-6)",
-          height: 56,
-          display: "flex",
-          alignItems: "stretch",
-          gap: "var(--space-4)",
-        }}
-      >
-        {/* Logo mark + wordmark */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-2)",
-            flexShrink: 0,
-            marginRight: "var(--space-2)",
-          }}
+    <nav className="tc-nav">
+      {/* Logo */}
+      <a href="/app/dashboard" className="tc-nav-logo">
+        <div className="tc-nav-logo-mark">
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+        </div>
+        <span className="tc-nav-logo-name">CitaCal</span>
+      </a>
+
+      {/* Nav links */}
+      <div className="tc-nav-links">
+        {TABS.map((tab) => (
+          <a
+            key={tab.id}
+            href={tab.href}
+            className={`tc-nav-link${activeTab === tab.id ? " active" : ""}`}
+          >
+            {tab.label}
+          </a>
+        ))}
+      </div>
+
+      {/* Right cluster */}
+      <div className="tc-nav-right">
+        <a
+          href="/app/dashboard/event-types"
+          style={{ textDecoration: "none" }}
         >
-          <div
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: "var(--radius-md)",
-              background: "var(--blue-400)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="4" width="18" height="18" rx="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-          </div>
-          <span
-            style={{
-              fontSize: 15,
-              fontWeight: 700,
-              color: "var(--text-primary)",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            TrackCal
-          </span>
-        </div>
-
-        {/* Vertical divider */}
-        <div
-          style={{
-            width: 1,
-            background: "var(--border-default)",
-            alignSelf: "stretch",
-            margin: "12px 0",
-            flexShrink: 0,
-          }}
-        />
-
-        {/* Tabs — underline active style, full nav height */}
-        <div style={{ display: "flex", alignItems: "stretch" }}>
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <a
-                key={tab.id}
-                href={tab.href}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "0 var(--space-4)",
-                  fontSize: 13,
-                  fontWeight: isActive ? 600 : 500,
-                  color: isActive ? "var(--text-primary)" : "var(--text-tertiary)",
-                  textDecoration: "none",
-                  borderBottom: isActive
-                    ? "2px solid var(--blue-400)"
-                    : "2px solid transparent",
-                  transition: "color 0.15s, border-color 0.15s",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {tab.label}
-              </a>
-            );
-          })}
-        </div>
-
-        <div style={{ flex: 1 }} />
-
-        {/* Right cluster */}
-        {calendarConnected ? (
-          <div style={{ display: "flex", alignItems: "center" }}>
+          <div className="tc-status-chip tc-status-chip--neutral nav-links-badge">
+            <span className="nav-links-label">Active meeting links</span>
             <span
-              className="badge badge-green nav-calendar-badge"
-              style={{ fontSize: 11, gap: "var(--space-1)" }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: 18,
+                height: 18,
+                borderRadius: "var(--radius-full)",
+                background: activeLinks > 0 ? "var(--blue-400)" : "var(--border-strong)",
+                color: "#fff",
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "0 5px",
+              }}
             >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "var(--success)",
-                  flexShrink: 0,
-                }}
-              />
-              <span className="nav-calendar-label">Calendar connected</span>
+              {activeLinks}
             </span>
           </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <a href="/api/auth/google" className="btn btn-secondary btn-sm nav-connect-btn">
-              <span className="nav-connect-label">Connect Google Calendar</span>
-              <span className="nav-connect-short" style={{ display: "none" }}>Connect</span>
-            </a>
-          </div>
-        )}
+        </a>
 
-        <div
-          style={{
-            width: 1,
-            background: "var(--border-default)",
-            alignSelf: "stretch",
-            margin: "12px 0",
-            flexShrink: 0,
-          }}
-        />
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-3)",
-          }}
-        >
+        {email && (
           <span
             className="nav-email-text"
             style={{
               fontSize: 12,
-              color: "var(--text-tertiary)",
+              color: "var(--color-text-muted)",
               maxWidth: 180,
               overflow: "hidden",
               textOverflow: "ellipsis",
@@ -190,8 +98,9 @@ export default function DashboardNav({
           >
             {email}
           </span>
-          <SignOutButton />
-        </div>
+        )}
+
+        <SignOutButton />
       </div>
     </nav>
   );

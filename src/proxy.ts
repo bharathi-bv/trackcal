@@ -64,6 +64,6 @@ export default async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Exclude: Next.js internals, static files, API routes, and the public /book page
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api|book).*)"],
+  // Exclude: Next.js internals, static files, API routes, and public pages (/book, /embed)
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api|book|embed).*)"],
 };

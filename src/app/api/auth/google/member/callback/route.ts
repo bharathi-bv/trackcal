@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   try {
     await exchangeCodeAndSaveForMember(code, state);
 
-    // Check whether the person completing OAuth has an active TrackCal session.
+    // Check whether the person completing OAuth has an active CitaCal session.
     // Self-service flow (came from /api/auth/google/member/self): user is logged in → /app/member/settings
     // Admin-shared link flow (old): no session → /app/dashboard/settings for the admin to see
     const supabase = await createAuthServerClient();

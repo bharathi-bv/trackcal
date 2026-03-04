@@ -25,7 +25,7 @@ export async function GET() {
   const db = createServerClient();
   const { data, error } = await db
     .from("team_members")
-    .select("id, name, email, photo_url, is_active, google_refresh_token, last_booking_at, created_at")
+    .select("id, name, email, photo_url, is_active, google_refresh_token, microsoft_refresh_token, last_booking_at, created_at")
     .order("created_at", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       email: parsed.data.email,
       photo_url: parsed.data.photo_url ?? null,
     })
-    .select("id, name, email, photo_url, is_active, google_refresh_token, last_booking_at, created_at")
+    .select("id, name, email, photo_url, is_active, google_refresh_token, microsoft_refresh_token, last_booking_at, created_at")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   // Send Supabase Auth invite so the team member can create their own account.
   // inviteUserByEmail uses the service_role key — no external email service needed.
   // Non-blocking: a failed invite (e.g. email already exists) doesn't block member creation.
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const appUrl = request.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || "";
   try {
     await db.auth.admin.inviteUserByEmail(parsed.data.email, {
       redirectTo: `${appUrl}/auth/callback`,

@@ -1,6 +1,6 @@
-# CLAUDE.md — TrackCal
+# CLAUDE.md — CitaCal
 
-> This file is read automatically by Claude Code at the start of every session. It contains everything needed to continue working on TrackCal without re-explaining context.
+> This file is read automatically by Claude Code at the start of every session. It contains everything needed to continue working on CitaCal without re-explaining context.
 
 ---
 
@@ -65,7 +65,7 @@ Most developers know code but don't understand which experiments to prioritize, 
 
 ---
 
-## What TrackCal Is
+## What CitaCal Is
 
 **Attribution-safe scheduling SaaS.**
 
@@ -73,7 +73,7 @@ Most developers know code but don't understand which experiments to prioritize, 
 Calendly and similar tools break attribution. UTMs, gclid, li_fat_id, fbclid, and other click IDs are lost when someone books a demo — mainly because calendar embeds are iframes and lose GA/Mixpanel tracking across domains. Marketers lose attribution at the most important moment — the actual conversion.
 
 ### The Solution
-TrackCal preserves all attribution data through the entire booking flow, server-side, and fires it to CRMs, ad platforms, and analytics at the moment of booking confirmation.
+CitaCal preserves all attribution data through the entire booking flow, server-side, and fires it to CRMs, ad platforms, and analytics at the moment of booking confirmation.
 
 ### Target Users
 Growth teams at PLG/AI startups running paid acquisition who need:
@@ -118,13 +118,13 @@ Growth teams at PLG/AI startups running paid acquisition who need:
 ## Project Structure
 
 ```
-trackcal/
+citacal/
 ├── src/
 │   └── app/
 │       ├── book/                         # Booking flow — main feature
 │       │   └── page.tsx
 │       ├── styles/
-│       │   └── trackcal/
+│       │   └── citacal/
 │       │       └── src/
 │       │           ├── tokens.css        # All CSS custom properties (~600 tokens)
 │       │           ├── base.css          # Reset + typography scale
@@ -177,9 +177,9 @@ Weight scale: 300 (light) → 400 (regular) → 500 (medium) → 600 (semibold) 
 `globals.css` — these must be at the very top, before anything else:
 ```css
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap');
-@import './styles/trackcal/src/tokens.css';
-@import './styles/trackcal/src/base.css';
-@import './styles/trackcal/src/components.css';
+@import './styles/citacal/src/tokens.css';
+@import './styles/citacal/src/base.css';
+@import './styles/citacal/src/components.css';
 
 /* rest of globals below */
 ```
@@ -253,7 +253,7 @@ Utilities:   .flex .flex-col .items-center .justify-between .justify-end
              .grid-2 .grid-3 .w-full .flex-1 .flex-wrap
 ```
 
-### Wiring TrackCal Tokens into Shadcn
+### Wiring CitaCal Tokens into Shadcn
 Add to `globals.css` after the imports to make shadcn components pick up our font and colors:
 ```css
 :root {
@@ -362,7 +362,7 @@ ttclid     // TikTok click ID
 msclkid    // Microsoft Ads click ID
 ```
 
-**Why this matters:** Calendly drops all of these. Our users spend $10k–$100k/month on ads and can't tell which campaigns drive demos. TrackCal fixes this.
+**Why this matters:** Calendly drops all of these. Our users spend $10k–$100k/month on ads and can't tell which campaigns drive demos. CitaCal fixes this.
 
 ---
 

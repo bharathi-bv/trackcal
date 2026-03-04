@@ -1,7 +1,7 @@
--- ── Team Member TrackCal Accounts ──────────────────────────────────────────
+-- ── Team Member CitaCal Accounts ──────────────────────────────────────────
 --
 -- Adds user_id to team_members so each team member can have their own
--- TrackCal account (via Supabase Auth invite). After they sign up via the
+-- CitaCal account (via Supabase Auth invite). After they sign up via the
 -- invite email, /auth/callback sets this column to their auth.users.id.
 --
 -- This enables:

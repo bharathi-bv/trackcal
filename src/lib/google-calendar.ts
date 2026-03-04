@@ -17,7 +17,9 @@
  */
 
 import { google } from "googleapis";
+import type { AvailabilityRange } from "./event-type-config";
 import { createServerClient } from "./supabase";
+import { isMemberAvailableOutlook } from "./outlook-calendar";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/calendar",
@@ -28,15 +30,39 @@ const DEFAULT_START_HOUR = 9;
 const DEFAULT_END_HOUR = 17;
 const DEFAULT_SLOT_MINUTES = 30;
 
-type SlotSettings = {
+export type SlotSettings = {
   duration: number;
   start_hour: number;
   end_hour: number;
   slot_increment: number;
+  availability_ranges?: AvailabilityRange[];
   min_notice_hours?: number;
   max_days_in_advance?: number;
   buffer_before_minutes?: number;
   buffer_after_minutes?: number;
+};
+
+export type MemberCalendarTokens = {
+  access_token: string | null;
+  refresh_token: string;
+  expiry: string | null;
+  memberId: string;
+  calendar_ids?: string[] | null;
+};
+
+export type ConnectedCalendar = {
+  id: string;
+  name: string;
+  isPrimary: boolean;
+};
+
+type CalendarEventInput = {
+  date: string;
+  time: string;
+  durationMinutes?: number;
+  summary?: string;
+  description?: string;
+  location?: string;
 };
 
 // ── OAuth client factories ───────────────────────────────────────────────────
@@ -71,6 +97,9 @@ export function getAuthUrl(): string {
 export async function exchangeCodeAndSave(code: string): Promise<void> {
   const auth = getOAuth2Client();
   const { tokens } = await auth.getToken(code);
+  auth.setCredentials(tokens);
+  const calendars = await listGoogleCalendarsForAuth(auth);
+  const defaultCalendarId = calendars.find((calendar) => calendar.isPrimary)?.id ?? "primary";
 
   const db = createServerClient();
   const { data: existing } = await db
@@ -83,17 +112,43 @@ export async function exchangeCodeAndSave(code: string): Promise<void> {
     google_access_token: tokens.access_token ?? null,
     ...(tokens.refresh_token ? { google_refresh_token: tokens.refresh_token } : {}),
     google_token_expiry: tokens.expiry_date?.toString() ?? null,
+    google_calendar_ids: [defaultCalendarId],
+    calendar_provider: "google",
+    microsoft_access_token: null,
+    microsoft_refresh_token: null,
+    microsoft_token_expiry: null,
+    microsoft_calendar_ids: [],
+  };
+
+  const legacyTokenData = {
+    google_access_token: tokens.access_token ?? null,
+    ...(tokens.refresh_token ? { google_refresh_token: tokens.refresh_token } : {}),
+    google_token_expiry: tokens.expiry_date?.toString() ?? null,
+    google_calendar_ids: [defaultCalendarId],
   };
 
   if (existing) {
-    const { error } = await db
-      .from("host_settings")
-      .update(tokenData)
-      .eq("id", existing.id);
-    if (error) throw new Error(`Failed to update host_settings: ${error.message}`);
+    let result = await db.from("host_settings").update(tokenData).eq("id", existing.id);
+    if (
+      result.error &&
+      (result.error.code === "42703" ||
+        result.error.message.includes("calendar_provider") ||
+        result.error.message.includes("microsoft_"))
+    ) {
+      result = await db.from("host_settings").update(legacyTokenData).eq("id", existing.id);
+    }
+    if (result.error) throw new Error(`Failed to update host_settings: ${result.error.message}`);
   } else {
-    const { error } = await db.from("host_settings").insert(tokenData);
-    if (error) throw new Error(`Failed to insert host_settings: ${error.message}`);
+    let result = await db.from("host_settings").insert(tokenData);
+    if (
+      result.error &&
+      (result.error.code === "42703" ||
+        result.error.message.includes("calendar_provider") ||
+        result.error.message.includes("microsoft_"))
+    ) {
+      result = await db.from("host_settings").insert(legacyTokenData);
+    }
+    if (result.error) throw new Error(`Failed to insert host_settings: ${result.error.message}`);
   }
 }
 
@@ -124,6 +179,9 @@ export async function exchangeCodeAndSaveForMember(
 ): Promise<void> {
   const auth = getMemberOAuth2Client();
   const { tokens } = await auth.getToken(code);
+  auth.setCredentials(tokens);
+  const calendars = await listGoogleCalendarsForAuth(auth);
+  const defaultCalendarId = calendars.find((calendar) => calendar.isPrimary)?.id ?? "primary";
 
   const tokenData: Record<string, string | null> = {
     google_access_token: tokens.access_token ?? null,
@@ -136,7 +194,14 @@ export async function exchangeCodeAndSaveForMember(
   const db = createServerClient();
   const { error } = await db
     .from("team_members")
-    .update(tokenData)
+    .update({
+      ...tokenData,
+      google_calendar_ids: [defaultCalendarId],
+      microsoft_calendar_ids: [],
+      microsoft_access_token: null,
+      microsoft_refresh_token: null,
+      microsoft_token_expiry: null,
+    })
     .eq("id", memberId);
   if (error) throw new Error(`Failed to save member tokens: ${error.message}`);
 }
@@ -241,7 +306,7 @@ function minutesToLabel(totalMinutes: number): string {
 }
 
 /** Parse "02:00 PM" → total minutes from midnight. */
-function timeLabelToMinutes(label: string): number {
+export function timeLabelToMinutes(label: string): number {
   const [timePart, period] = label.split(" ");
   const [hStr, mStr] = timePart.split(":");
   let h = parseInt(hStr, 10);
@@ -253,16 +318,18 @@ function timeLabelToMinutes(label: string): number {
 
 // ── Internal: compute free slots for any auth client ─────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getAvailableSlotsForAuth(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   auth: any,
   date: string,
-  settings: SlotSettings
+  settings: SlotSettings,
+  calendarIds: string[] = ["primary"]
 ): Promise<{ slots: string[]; hostTimezone: string }> {
   const calendar = google.calendar({ version: "v3", auth });
+  const effectiveCalendarIds = calendarIds.length > 0 ? calendarIds : ["primary"];
+  const timezoneCalendarId = effectiveCalendarIds[0] ?? "primary";
 
-  const { data: calData } = await calendar.calendars.get({ calendarId: "primary" });
+  const { data: calData } = await calendar.calendars.get({ calendarId: timezoneCalendarId });
   const tz = calData.timeZone ?? "UTC";
 
   const offsetStr = getOffsetString(tz, new Date(`${date}T12:00:00Z`));
@@ -273,44 +340,59 @@ async function getAvailableSlotsForAuth(
     requestBody: {
       timeMin: dayStart,
       timeMax: dayEnd,
-      items: [{ id: "primary" }],
+      items: effectiveCalendarIds.map((id) => ({ id })),
     },
   });
 
-  const busy = data.calendars?.primary?.busy ?? [];
+  const busy = Object.values(data.calendars ?? {}).flatMap((calendarRow) => calendarRow?.busy ?? []);
   const localMidnight = new Date(`${date}T00:00:00${offsetStr}`);
   const available: string[] = [];
+  const ranges =
+    settings.availability_ranges && settings.availability_ranges.length > 0
+      ? settings.availability_ranges
+      : [{ start_hour: settings.start_hour, end_hour: settings.end_hour }];
 
-  for (
-    let t = settings.start_hour * 60;
-    t + settings.duration <= settings.end_hour * 60;
-    t += settings.slot_increment
-  ) {
-    const slotStart = new Date(localMidnight.getTime() + t * 60 * 1000);
-    const slotEnd = new Date(slotStart.getTime() + settings.duration * 60 * 1000);
-    const minNoticeMs = (settings.min_notice_hours ?? 0) * 60 * 60 * 1000;
-    const earliestAllowed = new Date(Date.now() + minNoticeMs);
+  for (const range of ranges) {
+    for (
+      let t = range.start_hour * 60;
+      t + settings.duration <= range.end_hour * 60;
+      t += settings.slot_increment
+    ) {
+      const slotStart = new Date(localMidnight.getTime() + t * 60 * 1000);
+      const slotEnd = new Date(slotStart.getTime() + settings.duration * 60 * 1000);
+      const minNoticeMs = (settings.min_notice_hours ?? 0) * 60 * 60 * 1000;
+      const earliestAllowed = new Date(Date.now() + minNoticeMs);
 
-    const isBusy = busy.some((b) => {
-      const busyStart = new Date(b.start!);
-      const busyEnd = new Date(b.end!);
-      const slotStartWithBuffer = new Date(
-        slotStart.getTime() - (settings.buffer_before_minutes ?? 0) * 60 * 1000
-      );
-      const slotEndWithBuffer = new Date(
-        slotEnd.getTime() + (settings.buffer_after_minutes ?? 0) * 60 * 1000
-      );
-      return slotStartWithBuffer < busyEnd && slotEndWithBuffer > busyStart;
-    });
+      const isBusy = busy.some((b) => {
+        const busyStart = new Date(b.start!);
+        const busyEnd = new Date(b.end!);
+        const slotStartWithBuffer = new Date(
+          slotStart.getTime() - (settings.buffer_before_minutes ?? 0) * 60 * 1000
+        );
+        const slotEndWithBuffer = new Date(
+          slotEnd.getTime() + (settings.buffer_after_minutes ?? 0) * 60 * 1000
+        );
+        return slotStartWithBuffer < busyEnd && slotEndWithBuffer > busyStart;
+      });
 
-    const isInPast = slotStart <= earliestAllowed;
+      const isInPast = slotStart <= earliestAllowed;
 
-    if (!isBusy && !isInPast) {
-      available.push(minutesToLabel(t));
+      if (!isBusy && !isInPast) {
+        available.push(minutesToLabel(t));
+      }
     }
   }
 
-  return { slots: available, hostTimezone: tz };
+  return { slots: [...new Set(available)], hostTimezone: tz };
+}
+
+export async function getAvailableSlotsForMemberTokens(
+  date: string,
+  settings: SlotSettings,
+  memberTokens: MemberCalendarTokens
+): Promise<{ slots: string[]; hostTimezone: string }> {
+  const auth = buildAuthedClientFromTokens(memberTokens);
+  return getAvailableSlotsForAuth(auth, date, settings, memberTokens.calendar_ids ?? ["primary"]);
 }
 
 // ── Availability: single host ────────────────────────────────────────────────
@@ -324,8 +406,14 @@ export async function getAvailableSlots(
     slot_increment: DEFAULT_SLOT_MINUTES,
   }
 ): Promise<{ slots: string[]; hostTimezone: string }> {
+  const db = createServerClient();
+  const { data: host } = await db
+    .from("host_settings")
+    .select("google_calendar_ids")
+    .limit(1)
+    .maybeSingle();
   const auth = await getAuthedClient();
-  return getAvailableSlotsForAuth(auth, date, settings);
+  return getAvailableSlotsForAuth(auth, date, settings, host?.google_calendar_ids ?? ["primary"]);
 }
 
 // ── Availability: union across team members ───────────────────────────────────
@@ -343,17 +431,24 @@ export async function getTeamAvailableSlots(
   const db = createServerClient();
   const { data: members } = await db
     .from("team_members")
-    .select("id, google_access_token, google_refresh_token, google_token_expiry")
+    .select("id, google_access_token, google_refresh_token, google_token_expiry, microsoft_access_token, microsoft_refresh_token, microsoft_token_expiry")
     .in("id", memberIds)
     .eq("is_active", true);
 
-  const connected = (members ?? []).filter((m) => m.google_refresh_token);
+  const connected = (members ?? []).filter((m) => m.google_refresh_token || m.microsoft_refresh_token);
   if (connected.length === 0) {
     return { slots: [], hostTimezone: "UTC" };
   }
 
   const results = await Promise.allSettled(
     connected.map((member) => {
+      if (member.microsoft_refresh_token) {
+        // Outlook member — use Outlook availability (not yet implemented as slot list, fall through to Google path)
+        // For now, fall back to Google if both tokens exist, otherwise skip
+        if (!member.google_refresh_token) {
+          return Promise.resolve({ slots: [] as string[], hostTimezone: "UTC" });
+        }
+      }
       const auth = buildAuthedClientFromTokens({
         access_token: member.google_access_token,
         refresh_token: member.google_refresh_token!,
@@ -396,11 +491,35 @@ export async function isMemberFreeAtSlot(
     google_access_token: string | null;
     google_refresh_token: string | null;
     google_token_expiry: string | null;
+    google_calendar_ids?: string[] | null;
+    microsoft_access_token?: string | null;
+    microsoft_refresh_token?: string | null;
+    microsoft_token_expiry?: string | null;
+    microsoft_calendar_ids?: string[] | null;
   },
   date: string,
   time: string,
   durationMinutes: number
 ): Promise<boolean> {
+  // If member has Microsoft tokens, use Outlook availability check
+  if (member.microsoft_refresh_token) {
+    const totalMins = timeLabelToMinutes(time);
+    const localMidnight = new Date(`${date}T00:00:00Z`);
+    const slotStart = new Date(localMidnight.getTime() + totalMins * 60 * 1000);
+    const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60 * 1000);
+    return isMemberAvailableOutlook(
+      {
+        id: member.id,
+        microsoft_access_token: member.microsoft_access_token,
+        microsoft_refresh_token: member.microsoft_refresh_token,
+        microsoft_token_expiry: member.microsoft_token_expiry,
+        microsoft_calendar_ids: member.microsoft_calendar_ids,
+      },
+      slotStart,
+      slotEnd
+    );
+  }
+
   if (!member.google_refresh_token) return false;
 
   const auth = buildAuthedClientFromTokens({
@@ -424,17 +543,52 @@ export async function isMemberFreeAtSlot(
     requestBody: {
       timeMin: slotStart.toISOString(),
       timeMax: slotEnd.toISOString(),
-      items: [{ id: "primary" }],
+      items: (member.google_calendar_ids && member.google_calendar_ids.length > 0
+        ? member.google_calendar_ids
+        : ["primary"]).map((id) => ({ id })),
     },
   });
 
-  const busy = data.calendars?.primary?.busy ?? [];
+  const busy = Object.values(data.calendars ?? {}).flatMap((calendarRow) => calendarRow?.busy ?? []);
   return busy.length === 0;
+}
+
+async function listGoogleCalendarsForAuth(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  auth: any
+): Promise<ConnectedCalendar[]> {
+  const calendar = google.calendar({ version: "v3", auth });
+  const calendars: ConnectedCalendar[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const { data } = await calendar.calendarList.list({ maxResults: 250, pageToken });
+    (data.items ?? []).forEach((item) => {
+      if (!item.id) return;
+      calendars.push({
+        id: item.id,
+        name: item.summary || item.id,
+        isPrimary: Boolean(item.primary),
+      });
+    });
+    pageToken = data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return calendars;
+}
+
+export async function listHostGoogleCalendars(): Promise<ConnectedCalendar[]> {
+  const auth = await getAuthedClient();
+  return listGoogleCalendarsForAuth(auth);
+}
+
+export async function listMemberGoogleCalendars(memberTokens: MemberCalendarTokens): Promise<ConnectedCalendar[]> {
+  const auth = buildAuthedClientFromTokens(memberTokens);
+  return listGoogleCalendarsForAuth(auth);
 }
 
 // ── Internal: insert a calendar event using any auth client ──────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function _insertCalendarEvent(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   auth: any,
@@ -457,7 +611,7 @@ async function _insertCalendarEvent(
     description?: string;
     location?: string;
   }
-): Promise<void> {
+): Promise<string | null> {
   const calendar = google.calendar({ version: "v3", auth });
   const { data: calData } = await calendar.calendars.get({ calendarId: "primary" });
   const tz = calData.timeZone ?? "UTC";
@@ -468,7 +622,7 @@ async function _insertCalendarEvent(
   const startDt = new Date(localMidnight.getTime() + totalMins * 60 * 1000);
   const endDt = new Date(startDt.getTime() + durationMinutes * 60 * 1000);
 
-  await calendar.events.insert({
+  const result = await calendar.events.insert({
     calendarId: "primary",
     sendUpdates: "all",
     conferenceDataVersion: 1,
@@ -477,15 +631,54 @@ async function _insertCalendarEvent(
       start: { dateTime: startDt.toISOString(), timeZone: tz },
       end: { dateTime: endDt.toISOString(), timeZone: tz },
       attendees: [{ email, displayName: name }],
-      description: description || `Booked via TrackCal.\n\nAttendee: ${name} <${email}>`,
+      description: description || `Booked via CitaCal.\n\nAttendee: ${name} <${email}>`,
       ...(location ? { location } : {}),
       conferenceData: {
         createRequest: {
-          requestId: `trackcal-${Date.now()}`,
+          requestId: `citacal-${Date.now()}`,
           conferenceSolutionKey: { type: "hangoutsMeet" },
         },
       },
     },
+  });
+
+  return result.data.id ?? null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function _updateCalendarEvent(auth: any, eventId: string, args: CalendarEventInput): Promise<void> {
+  const calendar = google.calendar({ version: "v3", auth });
+  const { data: calData } = await calendar.calendars.get({ calendarId: "primary" });
+  const tz = calData.timeZone ?? "UTC";
+  const offsetStr = getOffsetString(tz, new Date(`${args.date}T12:00:00Z`));
+  const totalMins = timeLabelToMinutes(args.time);
+  const localMidnight = new Date(`${args.date}T00:00:00${offsetStr}`);
+  const startDt = new Date(localMidnight.getTime() + totalMins * 60 * 1000);
+  const endDt = new Date(
+    startDt.getTime() + (args.durationMinutes ?? DEFAULT_SLOT_MINUTES) * 60 * 1000
+  );
+
+  await calendar.events.patch({
+    calendarId: "primary",
+    eventId,
+    sendUpdates: "all",
+    requestBody: {
+      start: { dateTime: startDt.toISOString(), timeZone: tz },
+      end: { dateTime: endDt.toISOString(), timeZone: tz },
+      ...(args.summary ? { summary: args.summary } : {}),
+      ...(args.description ? { description: args.description } : {}),
+      ...(args.location ? { location: args.location } : {}),
+    },
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function _deleteCalendarEvent(auth: any, eventId: string): Promise<void> {
+  const calendar = google.calendar({ version: "v3", auth });
+  await calendar.events.delete({
+    calendarId: "primary",
+    eventId,
+    sendUpdates: "all",
   });
 }
 
@@ -509,9 +702,9 @@ export async function createCalendarEvent({
   summary?: string;
   description?: string;
   location?: string;
-}): Promise<void> {
+}): Promise<string | null> {
   const auth = await getAuthedClient();
-  await _insertCalendarEvent(auth, {
+  return _insertCalendarEvent(auth, {
     date, time, name, email, durationMinutes, summary, description, location,
   });
 }
@@ -537,15 +730,84 @@ export async function createCalendarEventForMember({
   summary?: string;
   description?: string;
   location?: string;
-  memberTokens: {
-    access_token: string | null;
-    refresh_token: string;
-    expiry: string | null;
-    memberId: string;
-  };
-}): Promise<void> {
+  memberTokens: MemberCalendarTokens;
+}): Promise<string | null> {
   const auth = buildAuthedClientFromTokens(memberTokens);
-  await _insertCalendarEvent(auth, {
+  return _insertCalendarEvent(auth, {
     date, time, name, email, durationMinutes, summary, description, location,
   });
+}
+
+export async function updateCalendarEvent({
+  eventId,
+  date,
+  time,
+  durationMinutes = DEFAULT_SLOT_MINUTES,
+  summary,
+  description,
+  location,
+}: {
+  eventId: string;
+  date: string;
+  time: string;
+  durationMinutes?: number;
+  summary?: string;
+  description?: string;
+  location?: string;
+}): Promise<void> {
+  const auth = await getAuthedClient();
+  await _updateCalendarEvent(auth, eventId, {
+    date,
+    time,
+    durationMinutes,
+    summary,
+    description,
+    location,
+  });
+}
+
+export async function updateCalendarEventForMember({
+  eventId,
+  date,
+  time,
+  durationMinutes = DEFAULT_SLOT_MINUTES,
+  summary,
+  description,
+  location,
+  memberTokens,
+}: {
+  eventId: string;
+  date: string;
+  time: string;
+  durationMinutes?: number;
+  summary?: string;
+  description?: string;
+  location?: string;
+  memberTokens: MemberCalendarTokens;
+}): Promise<void> {
+  const auth = buildAuthedClientFromTokens(memberTokens);
+  await _updateCalendarEvent(auth, eventId, {
+    date,
+    time,
+    durationMinutes,
+    summary,
+    description,
+    location,
+  });
+}
+
+export async function deleteCalendarEvent(eventId: string): Promise<void> {
+  const auth = await getAuthedClient();
+  await _deleteCalendarEvent(auth, eventId);
+}
+
+export async function deleteCalendarEventForMember({
+  eventId,
+  memberTokens,
+}: {
+  eventId: string;
+  memberTokens: MemberCalendarTokens;
+}): Promise<void> {
+  const auth = buildAuthedClientFromTokens(memberTokens);
+  await _deleteCalendarEvent(auth, eventId);
 }

@@ -30,16 +30,25 @@ export default function AttributionCapture() {
     const params = captureUtmParams();
     setUtmParams(params);
 
-    // 2. Dynamically import + init Mixpanel (browser-only)
+    // 2. Dynamically import + init Mixpanel — deferred to idle so it doesn't
+    //    block LCP. requestIdleCallback fires after the browser has finished
+    //    painting the visible content.
     const token = process.env.NEXT_PUBLIC_MIXPANEL_TOKEN;
     if (token && token !== "your_token_here") {
-      import("mixpanel-browser").then((mp) => {
-        mp.default.init(token, {
-          track_pageview: true,
-          persistence: "localStorage",
+      const initMixpanel = () => {
+        import("mixpanel-browser").then((mp) => {
+          mp.default.init(token, {
+            track_pageview: true,
+            persistence: "localStorage",
+          });
+          registerMixpanel(mp.default);
         });
-        registerMixpanel(mp.default);
-      });
+      };
+      if ("requestIdleCallback" in window) {
+        requestIdleCallback(initMixpanel, { timeout: 3000 });
+      } else {
+        setTimeout(initMixpanel, 2000);
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

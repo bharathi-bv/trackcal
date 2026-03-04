@@ -18,6 +18,7 @@
 
 import * as React from "react";
 import { useBookingStore } from "@/store/bookingStore";
+import type { TeamAvailabilitySlotMeta } from "@/lib/team-scheduling";
 
 const HOUR_HEIGHT = 48; // px per visual hour
 const LABEL_WIDTH = 52; // px for time-label column
@@ -88,6 +89,8 @@ type RowEntry = {
   isHour: boolean;
   isHalfHour: boolean;
 };
+
+type SlotMetaLookup = Record<string, TeamAvailabilitySlotMeta>;
 
 function buildRows(start_hour: number, end_hour: number, slot_increment: number): RowEntry[] {
   const rows: RowEntry[] = [];
@@ -164,6 +167,52 @@ function computeUnavailableBlocks(
   return blocks;
 }
 
+/**
+ * Convert a UTC busy interval into pixel coordinates within the host-TZ grid.
+ * Returns null if the interval doesn't overlap this day's visible grid at all.
+ */
+function utcIntervalToRowRange(
+  utcStart: string,
+  utcEnd: string,
+  dateISO: string,
+  hostTimezone: string,
+  start_hour: number,
+  end_hour: number,
+  allRows: RowEntry[],
+  ROW_HEIGHT: number
+): { topPx: number; heightPx: number } | null {
+  try {
+    const ref = new Date(`${dateISO}T12:00:00Z`);
+    const utcTs = new Date(ref.toLocaleString("en-US", { timeZone: "UTC" })).getTime();
+    const hostTs = new Date(ref.toLocaleString("en-US", { timeZone: hostTimezone })).getTime();
+    const hostOffsetMs = hostTs - utcTs;
+
+    const hostMidnightUTC = new Date(`${dateISO}T00:00:00Z`).getTime() - hostOffsetMs;
+    const gridStartMs = hostMidnightUTC + start_hour * 3_600_000;
+    const gridEndMs = hostMidnightUTC + end_hour * 3_600_000;
+    const gridTotalMs = gridEndMs - gridStartMs;
+    const gridHeightPx = allRows.length * ROW_HEIGHT;
+
+    const intervalStartMs = new Date(utcStart).getTime();
+    const intervalEndMs = new Date(utcEnd).getTime();
+
+    if (intervalEndMs <= gridStartMs || intervalStartMs >= gridEndMs) return null;
+
+    const clampedStart = Math.max(intervalStartMs, gridStartMs);
+    const clampedEnd = Math.min(intervalEndMs, gridEndMs);
+
+    const topPx = ((clampedStart - gridStartMs) / gridTotalMs) * gridHeightPx;
+    const heightPx = Math.max(
+      ROW_HEIGHT / 2,
+      ((clampedEnd - clampedStart) / gridTotalMs) * gridHeightPx
+    );
+
+    return { topPx, heightPx };
+  } catch {
+    return null;
+  }
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function ThreeDaySlotPicker({
@@ -176,6 +225,8 @@ export default function ThreeDaySlotPicker({
   duration = 30,
   viewerTimezone = "UTC",
   dayCount,
+  onHostTimezoneChange,
+  visitorBusy,
 }: {
   anchorDate: string;
   onAnchorChange: (iso: string) => void;
@@ -186,16 +237,23 @@ export default function ThreeDaySlotPicker({
   duration?: number;
   viewerTimezone?: string;
   dayCount?: number;
+  onHostTimezoneChange?: (tz: string) => void;
+  /** Visitor's calendar busy intervals keyed by date ISO, UTC strings. */
+  visitorBusy?: Record<string, { start: string; end: string }[]>;
 }) {
   const { selectedDate, selectedTime, setDate, setTime } = useBookingStore();
 
   const count = dayCount ?? DAY_COUNT;
 
   const [slotsMap, setSlotsMap] = React.useState<Record<string, string[]>>({});
+  const [slotMetaMap, setSlotMetaMap] = React.useState<Record<string, SlotMetaLookup>>({});
   const [loadingSet, setLoadingSet] = React.useState<Set<string>>(new Set());
   const [hostTimezone, setHostTimezone] = React.useState<string>("UTC");
   const [hover, setHover] = React.useState<{ day: string; rowIdx: number } | null>(null);
   const [now, setNow] = React.useState<Date>(() => new Date());
+  const [availabilityTiersEnabled, setAvailabilityTiersEnabled] = React.useState(false);
+  const [fallbackMinimumHostCount, setFallbackMinimumHostCount] = React.useState<number | null>(null);
+  const [preferredMinimumHostCount, setPreferredMinimumHostCount] = React.useState<number | null>(null);
 
   const fetchedDaysRef = React.useRef<Set<string>>(new Set());
 
@@ -233,42 +291,110 @@ export default function ThreeDaySlotPicker({
     onAnchorChange(toISODate(base));
   }
 
-  // Fetch availability — cache by date key, never clear (prevents grey flash on navigate)
+  // Fetch availability in batches and prefetch the next window.
+  // Cache by date key, never clear (prevents grey flash on navigate).
   React.useEffect(() => {
-    const uncached = days.filter((day) => !fetchedDaysRef.current.has(day));
-    if (uncached.length === 0) return;
+    let cancelled = false;
 
-    setLoadingSet((prev) => {
-      const next = new Set(prev);
-      uncached.forEach((d) => next.add(d));
-      return next;
-    });
-    setHover(null);
+    const fallbackSlots = allRows.map((r) => r.timeStr);
 
-    uncached.forEach((day) => {
-      fetchedDaysRef.current.add(day);
-      const url = `/api/availability?date=${day}${eventSlug ? `&event=${eventSlug}` : ""}`;
-      fetch(url)
-        .then((r) => r.json())
-        .then((data: { slots: string[] | null; hostTimezone?: string }) => {
-          if (data.hostTimezone) setHostTimezone(data.hostTimezone);
-          const fetched = Array.isArray(data.slots)
-            ? data.slots
-            : allRows.map((r) => r.timeStr);
-          setSlotsMap((prev) => ({ ...prev, [day]: fetched }));
-        })
-        .catch(() => {
-          setSlotsMap((prev) => ({ ...prev, [day]: allRows.map((r) => r.timeStr) }));
-        })
-        .finally(() => {
+    async function fetchBatch(targetDays: string[], showLoading: boolean) {
+      const uncached = targetDays.filter((day) => !fetchedDaysRef.current.has(day));
+      if (uncached.length === 0) return;
+
+      uncached.forEach((day) => fetchedDaysRef.current.add(day));
+
+      if (showLoading) {
+        setLoadingSet((prev) => {
+          const next = new Set(prev);
+          uncached.forEach((d) => next.add(d));
+          return next;
+        });
+        setHover(null);
+      }
+
+      const params = new URLSearchParams();
+      params.set("dates", uncached.join(","));
+      if (eventSlug) params.set("event", eventSlug);
+
+      try {
+        const res = await fetch(`/api/availability?${params.toString()}`);
+        const data = (await res.json()) as {
+          slotsByDate?: Record<string, string[] | null>;
+          slotMetaByDate?: Record<string, TeamAvailabilitySlotMeta[]>;
+          hostTimezone?: string;
+          availabilityTiersEnabled?: boolean;
+          preferredMinimumHostCount?: number;
+          fallbackMinimumHostCount?: number | null;
+        };
+
+        if (cancelled) return;
+        if (data.hostTimezone) {
+          setHostTimezone(data.hostTimezone);
+          onHostTimezoneChange?.(data.hostTimezone);
+        }
+
+        setAvailabilityTiersEnabled(Boolean(data.availabilityTiersEnabled));
+        setPreferredMinimumHostCount(
+          typeof data.preferredMinimumHostCount === "number"
+            ? data.preferredMinimumHostCount
+            : null
+        );
+        setFallbackMinimumHostCount(data.fallbackMinimumHostCount ?? null);
+
+        setSlotsMap((prev) => {
+          const next = { ...prev };
+          uncached.forEach((day) => {
+            const slots = data.slotsByDate?.[day];
+            next[day] = Array.isArray(slots) ? slots : fallbackSlots;
+          });
+          return next;
+        });
+        setSlotMetaMap((prev) => {
+          const next = { ...prev };
+          uncached.forEach((day) => {
+            const meta = data.slotMetaByDate?.[day] ?? [];
+            next[day] = Object.fromEntries(meta.map((slot) => [slot.time, slot]));
+          });
+          return next;
+        });
+      } catch {
+        if (cancelled) return;
+        setSlotsMap((prev) => {
+          const next = { ...prev };
+          uncached.forEach((day) => {
+            next[day] = fallbackSlots;
+          });
+          return next;
+        });
+        setSlotMetaMap((prev) => {
+          const next = { ...prev };
+          uncached.forEach((day) => {
+            next[day] = {};
+          });
+          return next;
+        });
+      } finally {
+        if (showLoading && !cancelled) {
           setLoadingSet((prev) => {
             const next = new Set(prev);
-            next.delete(day);
+            uncached.forEach((d) => next.delete(d));
             return next;
           });
-        });
-    });
-  }, [anchorDate]); // eslint-disable-line react-hooks/exhaustive-deps
+        }
+      }
+    }
+
+    void fetchBatch(days, true);
+
+    const nextStart = new Date(anchorDate + "T00:00:00");
+    nextStart.setDate(nextStart.getDate() + count);
+    void fetchBatch(getDays(toISODate(nextStart), count), false);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allRows, anchorDate, count, days, eventSlug, onHostTimezoneChange]);
 
   const selectedRowIdx =
     selectedTime ? allRows.findIndex((r) => r.timeStr === selectedTime) : -1;
@@ -298,7 +424,7 @@ export default function ThreeDaySlotPicker({
           }}
         >
           <button
-            className="btn btn-ghost btn-sm"
+            className="tc-btn tc-btn--ghost tc-btn--sm"
             onClick={prevDays}
             disabled={!canGoPrev}
             style={{ fontSize: 12, opacity: canGoPrev ? 1 : 0.3 }}
@@ -308,10 +434,48 @@ export default function ThreeDaySlotPicker({
           <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600 }}>
             {formatRange(days)}
           </span>
-          <button className="btn btn-ghost btn-sm" onClick={nextDays} style={{ fontSize: 12 }}>
+          <button className="tc-btn tc-btn--ghost tc-btn--sm" onClick={nextDays} style={{ fontSize: 12 }}>
             Next →
           </button>
         </div>
+
+        {availabilityTiersEnabled && (
+          <div
+            style={{
+              display: "flex",
+              gap: "var(--space-2)",
+              flexWrap: "wrap",
+              alignItems: "center",
+              marginBottom: "var(--space-3)",
+              paddingLeft: LABEL_WIDTH,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-secondary)",
+                padding: "4px 8px",
+                borderRadius: "var(--radius-full)",
+                background: "rgba(34,197,94,0.14)",
+                border: "1px solid rgba(34,197,94,0.20)",
+              }}
+            >
+              Preferred: all {preferredMinimumHostCount ?? 0} hosts available
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-secondary)",
+                padding: "4px 8px",
+                borderRadius: "var(--radius-full)",
+                background: "rgba(59,130,246,0.12)",
+                border: "1px solid rgba(59,130,246,0.18)",
+              }}
+            >
+              Also available: at least {fallbackMinimumHostCount ?? 0} hosts
+            </span>
+          </div>
+        )}
 
         {/* ── Slot grid (headers sticky inside scroll container so columns always align) ── */}
         <div
@@ -323,7 +487,7 @@ export default function ThreeDaySlotPicker({
             style={{
               position: "sticky",
               top: 0,
-              zIndex: 2,
+              zIndex: 20,
               background: "var(--surface-page)",
               display: "flex",
               borderBottom: "2px solid var(--border-default)",
@@ -423,6 +587,7 @@ export default function ThreeDaySlotPicker({
             {days.map((day) => {
               const isLoadingDay = loadingSet.has(day);
               const daySlots = slotsMap[day] ?? [];
+              const daySlotMeta = slotMetaMap[day] ?? {};
               const { isToday } = formatDayHeader(day);
 
               const hoverStart = hover?.day === day ? hover.rowIdx : -1;
@@ -445,12 +610,19 @@ export default function ThreeDaySlotPicker({
                   {/* Row cells — transparent bg, handle events */}
                   {allRows.map((row, rowIdx) => {
                     const isAvailable = !isLoadingDay && daySlots.includes(row.timeStr);
+                    const slotMeta = daySlotMeta[row.timeStr];
+                    const tier = availabilityTiersEnabled ? slotMeta?.tier : null;
                     return (
                       <div
                         key={row.timeStr}
                         style={{
                           height: ROW_HEIGHT,
-                          background: "transparent",
+                          background:
+                            tier === "preferred"
+                              ? "rgba(34,197,94,0.08)"
+                              : tier === "other"
+                                ? "rgba(59,130,246,0.07)"
+                                : "transparent",
                           borderTop:
                             rowIdx === 0
                               ? "none"
@@ -493,6 +665,86 @@ export default function ThreeDaySlotPicker({
                     />
                   ))}
 
+                  {/* Visitor calendar busy overlays — semi-transparent lavender, pointer-events: none */}
+                  {(visitorBusy?.[day] ?? []).map((interval, idx) => {
+                    const range = utcIntervalToRowRange(
+                      interval.start,
+                      interval.end,
+                      day,
+                      hostTimezone,
+                      start_hour,
+                      end_hour,
+                      allRows,
+                      ROW_HEIGHT
+                    );
+                    if (!range) return null;
+                    return (
+                      <div
+                        key={`vb-${idx}`}
+                        style={{
+                          position: "absolute",
+                          top: range.topPx,
+                          height: range.heightPx,
+                          left: 1,
+                          right: 1,
+                          background: "rgba(123,108,246,0.14)",
+                          border: "1px solid rgba(123,108,246,0.32)",
+                          borderRadius: 4,
+                          pointerEvents: "none",
+                          zIndex: 2,
+                          display: "flex",
+                          alignItems: "flex-start",
+                          padding: "2px 5px",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {range.heightPx >= 14 && (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 700,
+                              color: "rgba(109,40,217,0.85)",
+                              lineHeight: 1.2,
+                              userSelect: "none",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Busy
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Skeleton shimmer — shown while fetching this day's slots */}
+                  {isLoadingDay && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        zIndex: 5,
+                        overflow: "hidden",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {/* Repeating shimmer bars */}
+                      {Array.from({ length: Math.floor(allRows.length / 2) }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="skeleton"
+                          style={{
+                            position: "absolute",
+                            left: 4,
+                            right: 4,
+                            top: i * ROW_HEIGHT * 2 + 4,
+                            height: ROW_HEIGHT - 6,
+                            borderRadius: 5,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+
                   {/* Current time red line (today only) */}
                   {isToday && showCurrentTime && (
                     <div
@@ -530,7 +782,12 @@ export default function ThreeDaySlotPicker({
                         height: overlayH,
                         left: 3,
                         right: 3,
-                        background: "rgba(74,158,255,0.16)",
+                        background:
+                          daySlotMeta[allRows[hoverStart]?.timeStr ?? ""]?.tier === "preferred"
+                            ? "rgba(34,197,94,0.18)"
+                            : daySlotMeta[allRows[hoverStart]?.timeStr ?? ""]?.tier === "other"
+                              ? "rgba(59,130,246,0.16)"
+                              : "rgba(74,158,255,0.16)",
                         borderRadius: "var(--radius-md)",
                         pointerEvents: "none",
                         zIndex: 3,
@@ -546,7 +803,10 @@ export default function ThreeDaySlotPicker({
                           style={{
                             fontSize: 10,
                             fontWeight: 600,
-                            color: "var(--blue-500)",
+                            color:
+                              daySlotMeta[allRows[hoverStart]?.timeStr ?? ""]?.tier === "preferred"
+                                ? "#15803d"
+                                : "var(--blue-500)",
                             lineHeight: 1.3,
                           }}
                         >
@@ -577,7 +837,12 @@ export default function ThreeDaySlotPicker({
                         height: overlayH,
                         left: 3,
                         right: 3,
-                        background: "var(--blue-400)",
+                        background:
+                          daySlotMeta[allRows[selStart]?.timeStr ?? ""]?.tier === "preferred"
+                            ? "rgba(21,128,61,0.86)"
+                            : daySlotMeta[allRows[selStart]?.timeStr ?? ""]?.tier === "other"
+                              ? "rgba(37,99,235,0.86)"
+                              : "var(--blue-400)",
                         borderRadius: "var(--radius-md)",
                         pointerEvents: "none",
                         zIndex: 3,

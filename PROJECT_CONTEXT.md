@@ -1,9 +1,9 @@
-# TrackCal Project Context
+# CitaCal Project Context
 
 Last updated: 2026-02-27
 
 ## Purpose
-TrackCal is an attribution-safe scheduling app with team-aware round-robin scheduling. It captures UTM/click IDs on entry, preserves attribution through booking conversion, and stores attribution with each booking.
+CitaCal is an attribution-safe scheduling app with team-aware round-robin scheduling. It captures UTM/click IDs on entry, preserves attribution through booking conversion, and stores attribution with each booking.
 
 ## Tech Stack
 - Next.js 16 (App Router)
@@ -12,7 +12,7 @@ TrackCal is an attribution-safe scheduling app with team-aware round-robin sched
 - Supabase (data + auth)
 - Google Calendar API via `googleapis` (OAuth, availability, event creation)
 - Analytics: GA4 (`@next/third-parties`) + Mixpanel
-- Tailwind v4 + shadcn UI + custom TrackCal design tokens
+- Tailwind v4 + shadcn UI + custom CitaCal design tokens
 
 ## Route Structure (Current)
 - Public booking: `/book`
@@ -189,6 +189,6 @@ Source files:
 - Positioning: combine growth strategy (funnel/attribution/A-B testing) with hands-on shipping in product code.
 - Skill philosophy: AI handles boilerplate; focus on architecture decisions, debugging, trade-offs, and production judgment.
 
-### TrackCal Learning Plan Summary
+### CitaCal Learning Plan Summary
 - Structured 10-phase roadmap from setup to deploy/docs.
 - Current implementation has moved beyond baseline booking flow into team scheduling, dashboard ops, and advanced event configuration.

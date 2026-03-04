@@ -1,65 +1,74 @@
-import { redirect } from "next/navigation";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { headers } from "next/headers";
+import { getAvailabilitySchedules } from "@/lib/availability-schedules";
 import { createServerClient } from "@/lib/supabase";
 import DashboardNav from "@/components/dashboard/DashboardNav";
 import EventTypesClient from "@/components/dashboard/EventTypesClient";
 
+type EventStats = { total: number; thisMonth: number; topSource: string | null };
+type EventTypeStatsRow = {
+  event_slug: string;
+  total: number | string;
+  this_month: number | string;
+  top_source: string | null;
+};
+
 export default async function EventTypesPage() {
-  const supabaseAuth = await createAuthServerClient();
-  const {
-    data: { user },
-  } = await supabaseAuth.auth.getUser();
-
-  if (!user) redirect("/login");
-
   const db = createServerClient();
-  const [{ data: eventTypes }, { data: hostSettings }, { data: bookingRows }, { data: teamMembers }] = await Promise.all([
+  const thisMonthPrefix = new Date().toISOString().slice(0, 7); // e.g. "2026-02"
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const fallbackBaseUrl = host
+    ? `${proto}://${host}`
+    : process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "https://citacal.com";
+
+  const [{ data: eventTypes }, { data: hostSettings }, { data: statsRows }, { data: teamMembers }, availabilitySchedules] = await Promise.all([
     db.from("event_types").select("*").order("created_at", { ascending: true }),
-    db.from("host_settings").select("google_refresh_token").limit(1).maybeSingle(),
-    db.from("bookings").select("event_slug, utm_source, date").in("status", ["confirmed", "pending"]),
-    db.from("team_members").select("id, name, email, photo_url, google_refresh_token").eq("is_active", true).order("created_at", { ascending: true }),
+    db.from("host_settings").select("google_refresh_token, microsoft_refresh_token, booking_base_url, zoom_refresh_token").limit(1).maybeSingle(),
+    db.rpc("get_event_type_booking_stats", { month_prefix: thisMonthPrefix }),
+    db.from("team_members").select("id, name, email, photo_url, google_refresh_token, microsoft_refresh_token").eq("is_active", true).order("created_at", { ascending: true }),
+    getAvailabilitySchedules(db),
   ]);
 
-  const calendarConnected = Boolean(hostSettings?.google_refresh_token);
+  const activeLinks = (eventTypes ?? []).filter((et) => et.is_active).length;
+  const bookingBaseUrl =
+    hostSettings?.booking_base_url?.trim().replace(/\/+$/, "") || fallbackBaseUrl;
 
-  // Compute per-event-type booking stats
-  const thisMonthPrefix = new Date().toISOString().slice(0, 7); // e.g. "2026-02"
-  type EventStats = { total: number; thisMonth: number; topSource: string | null };
+  // Compute per-event-type booking stats from DB-aggregated rows
   const bookingStats: Record<string, EventStats> = {};
-  const slugSourceCounts: Record<string, Record<string, number>> = {};
-  (bookingRows ?? []).forEach((b) => {
-    if (!b.event_slug) return;
-    if (!bookingStats[b.event_slug]) bookingStats[b.event_slug] = { total: 0, thisMonth: 0, topSource: null };
-    bookingStats[b.event_slug].total++;
-    if (b.date?.startsWith(thisMonthPrefix)) bookingStats[b.event_slug].thisMonth++;
-    if (b.utm_source) {
-      if (!slugSourceCounts[b.event_slug]) slugSourceCounts[b.event_slug] = {};
-      const c = slugSourceCounts[b.event_slug];
-      c[b.utm_source] = (c[b.utm_source] ?? 0) + 1;
-    }
-  });
-  Object.entries(slugSourceCounts).forEach(([slug, counts]) => {
-    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-    if (bookingStats[slug]) bookingStats[slug].topSource = top;
+  (statsRows as EventTypeStatsRow[] | null | undefined)?.forEach((row) => {
+    if (!row?.event_slug) return;
+    bookingStats[row.event_slug] = {
+      total: Number(row.total ?? 0),
+      thisMonth: Number(row.this_month ?? 0),
+      topSource: row.top_source ?? null,
+    };
   });
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--surface-subtle)" }}>
+    <div style={{ minHeight: "100vh" }}>
       <DashboardNav
         activeTab="event-types"
-        calendarConnected={calendarConnected}
-        email={user.email ?? ""}
+        activeLinks={activeLinks}
+        email=""
       />
 
       <main
         className="dashboard-main"
         style={{
-          maxWidth: 1100,
+          maxWidth: 1320,
           margin: "0 auto",
           padding: "var(--space-8) var(--space-6)",
         }}
       >
-        <EventTypesClient initialEventTypes={eventTypes ?? []} bookingStats={bookingStats} availableMembers={teamMembers ?? []} />
+        <EventTypesClient
+          initialEventTypes={eventTypes ?? []}
+          initialAvailabilitySchedules={availabilitySchedules}
+          bookingStats={bookingStats}
+          availableMembers={teamMembers ?? []}
+          bookingBaseUrl={bookingBaseUrl}
+          zoomConnected={Boolean((hostSettings as { zoom_refresh_token?: string | null } | null)?.zoom_refresh_token)}
+        />
       </main>
     </div>
   );

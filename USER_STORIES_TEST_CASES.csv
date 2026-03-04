@@ -1,0 +1,166 @@
+ID,Area,User Story,Steps,Expected Result,Priority,Notes
+US-001,Auth,Sign up with email,"1. Go to /signup
+2. Enter name + email + password
+3. Submit
+4. Check email for confirmation link
+5. Click link","Account created, email confirmed, redirected to /app/dashboard",P0,Required before any other test
+US-002,Auth,Sign in with email,"1. Go to /login
+2. Enter email + password
+3. Submit","Redirected to /app/dashboard with session active",P0,
+US-003,Auth,Sign in with Google OAuth,"1. Go to /login
+2. Click 'Continue with Google'
+3. Select Google account","Redirected to /app/dashboard, session active",P0,
+US-004,Auth,Sign out,"1. In dashboard, click Sign out","Session cleared, redirected to /login. Accessing /app/* while logged out redirects to /login",P0,
+US-005,Auth,Protected route redirect,"1. While logged out, navigate directly to /app/dashboard","Redirected to /login immediately",P0,
+US-006,Auth,Reverse redirect when authed,"1. While logged in, navigate to /login or /signup","Redirected to /app/dashboard",P1,
+US-007,Booking,Basic booking — single host,"1. Open /book?event=<slug>
+2. Select a date that has slots
+3. Select a time slot
+4. Enter name + email
+5. Review and confirm","Booking confirmed page shown. Row appears in Supabase bookings table with correct date/time/status=confirmed",P0,
+US-008,Booking,Booking creates Google Calendar event,"1. Host must have Google Calendar connected
+2. Complete a booking (US-007)","Event appears in host's Google Calendar with correct time, title, Google Meet link",P0,Requires calendar connected
+US-009,Booking,Timezone detection,"1. Open /book?event=<slug> in browser with non-UTC timezone
+2. Verify timezone selector shows local timezone
+3. Slots shown in local timezone","All time slots display in visitor's local timezone. Booking stored in UTC equivalent",P0,Test from IST or PST
+US-010,Booking,Timezone change by visitor,"1. Open booking page
+2. Click timezone selector
+3. Change to a different timezone","All displayed slots update to new timezone. Booking still saves correctly",P1,
+US-011,Booking,UTM parameter capture,"1. Open /book?event=<slug>&utm_source=linkedin&utm_medium=cpc&utm_campaign=test&gclid=abc123
+2. Complete booking","Booking row in Supabase has utm_source=linkedin, utm_medium=cpc, utm_campaign=test, gclid=abc123",P0,Core value prop
+US-012,Booking,All 10 attribution params captured,"1. Open /book?event=<slug>&utm_source=x&utm_medium=y&utm_campaign=z&utm_term=a&utm_content=b&gclid=c&fbclid=d&li_fat_id=e&ttclid=f&msclkid=g
+2. Complete booking","All 10 UTM/click-ID fields populated in bookings table",P0,
+US-013,Booking,No slots available — past date,"1. Open /book with a date in the past selected","No slots shown. Day visually disabled in calendar",P0,
+US-014,Booking,No slots — host calendar busy,"1. Block the entire day in host Google Calendar
+2. Navigate to /book, select that date","No time slots available for that date",P0,Requires calendar connected
+US-015,Booking,Minimum notice enforcement,"1. Set min_notice_hours=24 on event type
+2. Try to book a slot less than 24 hours from now","That slot should not appear as available",P0,
+US-016,Booking,Max bookings per day enforcement,"1. Set max_bookings_per_day=2 on event type
+2. Make 2 bookings on the same day
+3. Try a 3rd booking on same day","3rd booking slot should not appear available",P1,
+US-017,Booking,Rate limiting by IP,"1. Submit more than 20 bookings in 1 hour from same IP","API returns 429 Too Many Requests error",P1,Hard to test manually
+US-018,Booking,Disposable email blocked,"1. Try booking with mailinator.com email address","Booking rejected with 'disposable email not allowed' error",P1,
+US-019,Booking,Custom booking questions shown,"1. Add 1-2 custom questions to event type
+2. Go to /book?event=<slug>
+3. Fill out name/email
+4. Proceed to details step","Custom questions appear in form. Answers saved in booking",P1,
+US-020,Booking,Duplicate booking same slot,"1. Two browser tabs open same /book page
+2. Both select same date + time
+3. Both submit","Only one booking succeeds. Second gets an error or is assigned to different host",P1,Race condition
+US-021,Booking,Zoom meeting auto-created,"1. Connect Zoom in Settings
+2. Set event type location to Zoom
+3. Complete a booking","Zoom meeting ID and join URL in booking. Meeting visible in Zoom dashboard",P1,
+US-022,Booking,Phone/Custom location shown,"1. Set event type location to Phone
+2. Enter a phone number
+3. Book via public link","Confirmation page shows phone number as location",P1,
+US-023,Booking,Booking widget embed,"1. Go to /embed?event=<slug>","Booking wizard loads without nav bar, fills iframe",P2,
+US-024,Dashboard,Today's bookings shown,"1. Log in on a day with bookings
+2. Go to /app/dashboard","Today's card shows correct count and list of meetings",P0,
+US-025,Dashboard,Click calendar date filters meetings,"1. Go to /app/dashboard
+2. Click a future date with bookings on the calendar","Left column updates to show only that date's bookings",P0,
+US-026,Dashboard,Calendar monthly totals,"1. Go to /app/dashboard
+2. View calendar on right","Month total shown below month name. Weekly totals shown in rightmost column",P0,
+US-027,Dashboard,Change booking status,"1. Open /app/dashboard
+2. Find an existing booking
+3. Change status to Cancelled","Status updates immediately. Database row updated",P0,
+US-028,Dashboard,CSV export,"1. Go to /app/analytics
+2. Apply filters
+3. Click 'Export CSV'","CSV file downloaded with correct bookings + all UTM columns",P1,
+US-029,Dashboard,Analytics source breakdown,"1. Make several bookings with different utm_source values
+2. Go to /app/analytics","Source chart shows breakdown by UTM source with correct counts",P1,
+US-030,Dashboard,Attribution coverage metric,"1. Mix bookings: some with UTMs, some without
+2. Go to /app/analytics","Attribution coverage % correctly shows % of bookings with at least one UTM param",P1,
+US-031,Scheduling,Create new meeting link,"1. Go to /app/dashboard/event-types
+2. Click '+ New Meeting Link'
+3. Fill in name, select 30 min duration, Google Meet
+4. Click Create","Event type created, appears in list, /book?event=<new-slug> returns slots",P0,
+US-032,Scheduling,Edit meeting link,"1. Click Edit on existing event type
+2. Change name and duration
+3. Save","Changes reflected immediately in event type list and booking page",P0,
+US-033,Scheduling,Delete meeting link,"1. Click Delete on event type
+2. Confirm deletion","Event type removed from list. /book?event=<slug> returns 404 or no slots",P0,
+US-034,Scheduling,Activate/deactivate toggle,"1. Click Active/Inactive toggle on event type card","Status flips. Inactive event returns no slots on booking page",P0,
+US-035,Scheduling,Full-page edit navigates correctly,"1. Click Edit on event type
+2. Full-page edit opens with breadcrumb '← Scheduling / Name'
+3. Click breadcrumb","Returns to scheduling list without saving changes",P0,
+US-036,Scheduling,Live preview updates,"1. Open edit for event type
+2. Select a date on the right-panel calendar","Slots load and show available/unavailable. Unavailable slots are greyed with ? icon",P1,
+US-037,Scheduling,Slot diagnostic — why unavailable,"1. Open edit, select date with some grey slots
+2. Click a grey slot","Diagnostic panel shows reason (e.g. 'Calendar busy at this time' or 'Day disabled')",P1,
+US-038,Scheduling,Custom availability schedule,"1. In edit, click 'Use a custom schedule for this event instead'
+2. Set Mon-Fri 9am-5pm, disable Sat/Sun
+3. Save","/book?event=<slug> only shows weekday slots in 9-5 range",P1,
+US-039,Scheduling,Saved availability schedule,"1. Create a saved schedule in Availability tab
+2. Assign it to an event type
+3. Save","Event type uses that schedule's availability. Changing schedule updates all events using it",P1,
+US-040,Scheduling,Booking window — rolling,"1. Set max_days_in_advance=7
+2. Open /book?event=<slug>","Calendar shows only next 7 days as selectable",P1,
+US-041,Scheduling,Booking window — fixed range,"1. Set booking_window_type=fixed with start+end dates
+2. Open booking page","Only dates within range are selectable",P1,
+US-042,Scheduling,UTM link presets,"1. On event type card, expand UTM Links
+2. Add preset: source=linkedin, medium=paid-social, campaign=q2
+3. Copy generated link","Pasted URL contains utm_source=linkedin&utm_medium=paid-social&utm_campaign=q2",P2,
+US-043,Settings,Connect Google Calendar,"1. Go to Settings
+2. Click 'Connect Google Calendar'
+3. Complete Google OAuth","Calendar shows as connected. Availability now uses Google freebusy",P0,
+US-044,Settings,Disconnect Google Calendar,"1. Settings → click Disconnect
+2. Confirm","Calendar disconnected. Booking page still works (shows all slots as available)",P1,
+US-045,Settings,Connect Zoom,"1. Settings → click 'Connect Zoom'
+2. Complete Zoom OAuth","Zoom shows as connected. New bookings with Zoom location create unique meetings",P1,
+US-046,Settings,Webhook URL setup,"1. Settings → enter webhook URL
+2. Save
+3. Make a new booking","POST request received at webhook URL with booking payload + HMAC signature",P2,
+US-047,Settings,Google Sheets sync,"1. Connect Google Sheets in Integrations tab
+2. Select/create a spreadsheet
+3. Make a new booking","New row appended to sheet with all booking fields + UTMs",P2,
+US-048,Team,Invite team member,"1. Settings → Team Members → Add Member
+2. Enter name + email
+3. Save","Invitation email sent to team member's inbox",P1,
+US-049,Team,Team member accepts invite,"1. Team member clicks link in invitation email
+2. Completes signup/login","Redirected to /app/member/settings. Member linked to account",P1,
+US-050,Team,Team member connects calendar,"1. /app/member/settings → Connect Google Calendar
+2. Complete OAuth","Calendar connected. Badge shows 'Calendar connected' in host dashboard's team list",P1,
+US-051,Team,Round-robin assignment,"1. Create event type with 2+ team members assigned
+2. Book same event type 3 times","First booking: member A, second: member B, third: member A (least recently booked first)",P1,
+US-052,Team,Skip member without calendar,"1. Assign 2 members: one with calendar, one without
+2. Make several bookings","All bookings go to member with calendar connected. Member without skipped",P1,
+US-053,Team,Collective meeting — all must be free,"1. Create event type with collective scheduling, 2 members
+2. Block member B's calendar for a slot
+3. Book that slot","Slot unavailable if member B required. Shows fewer slots than individual",P2,
+US-054,Manage,Cancel booking via manage link,"1. Get manage_token from booking row
+2. Navigate to /manage/<token>
+3. Click Cancel","Booking status → cancelled. Confirmation shown",P1,Requires manage_token column populated
+US-055,Manage,Reschedule booking via manage link,"1. Navigate to /manage/<token>
+2. Click Reschedule
+3. Select new date/time","New booking created with status confirmed. Old booking cancelled",P1,
+US-056,Manage,Expired manage link,"1. Use a manage_token that is >30 days old
+2. Navigate to /manage/<token>","Error page: 'This link has expired'",P2,
+US-057,Attribution,booking_started fires in GA4,"1. Open /book?event=<slug>
+2. Check GA4 Realtime or DebugView","booking_started event visible with product=trackcal",P1,Requires GA4 configured
+US-058,Attribution,booking_completed fires in GA4,"1. Complete a booking
+2. Check GA4 Realtime","booking_completed event visible with utm params as event properties",P0,Core metric
+US-059,Attribution,Mixpanel user identified,"1. Complete a booking with email
+2. Check Mixpanel People","User profile created/updated with email, last_booking_date",P1,
+US-060,Attribution,30-day UTM persistence,"1. Visit /book?event=slug&utm_source=test
+2. Close tab
+3. Re-open /book (without UTMs) within 30 days","localStorage still has utm_source=test, new booking captures it",P1,
+US-061,Landing,Landing page loads,"1. Visit /","Marketing landing page loads with demo booking mock and hero copy",P0,
+US-062,Landing,Docs page loads,"1. Visit /docs","Documentation page loads with feature descriptions",P2,
+US-063,Perf,Booking page loads fast,"1. Open /book?event=<slug> with DevTools Network tab
+2. Check time to interactive","Page interactive in < 3 seconds on slow 3G",P1,
+US-064,Mobile,Booking flow on mobile,"1. Open /book?event=<slug> on 375px viewport (iPhone SE)
+2. Complete full booking flow","All steps usable on mobile. No horizontal scroll. Slots tappable. Form fills correctly",P0,
+US-065,Mobile,Dashboard on mobile,"1. Open /app/dashboard on 375px viewport","Page readable. Nav accessible. Calendar and booking list visible without horizontal scroll",P1,
+US-066,Edge,Missing event slug,"1. Visit /book?event=nonexistent-slug","Graceful error message: event type not found",P0,
+US-067,Edge,Inactive event type,"1. Deactivate an event type
+2. Visit /book?event=<slug>","No slots available. Clear message shown",P0,
+US-068,Edge,Calendar not connected — booking,"1. Host has no calendar connected
+2. Visit booking page","Slots still appear (all available). Booking creates without calendar event",P1,Graceful degradation
+US-069,Edge,Network error during booking submit,"1. Go offline in DevTools
+2. Submit booking form","Error message shown. User can retry",P1,
+US-070,Security,SQL injection attempt,"1. In booking name field, enter: '; DROP TABLE bookings; --
+2. Submit","Booking rejected or saved literally as string. Database unaffected",P0,Zod + Supabase parameterized queries
+US-071,Security,XSS in booking fields,"1. In booking name, enter: <script>alert('xss')</script>
+2. Check dashboard","Script not executed. Displayed as escaped text",P0,
+US-072,Security,Access another user's data,"1. Log in as User A
+2. Try to access User B's bookings via API: GET /api/bookings","Returns only User A's bookings (RLS enforced)",P0,If RLS is enabled
