@@ -7,11 +7,18 @@ export default function AnalyticsIdsEditor({
   initialGtmId,
   initialMetaPixelId,
   initialLinkedinPartnerId,
+  onSaved,
 }: {
   initialGaId?: string | null;
   initialGtmId?: string | null;
   initialMetaPixelId?: string | null;
   initialLinkedinPartnerId?: string | null;
+  onSaved?: (next: {
+    gaId: string | null;
+    gtmId: string | null;
+    metaPixelId: string | null;
+    linkedinPartnerId: string | null;
+  }) => void;
 }) {
   const [gaId, setGaId] = React.useState(initialGaId ?? "");
   const [gtmId, setGtmId] = React.useState(initialGtmId ?? "");
@@ -39,6 +46,12 @@ export default function AnalyticsIdsEditor({
         throw new Error(typeof data.error === "string" ? data.error : "Save failed");
       }
       setToast({ ok: true, msg: "Saved." });
+      onSaved?.({
+        gaId: gaId.trim() || null,
+        gtmId: gtmId.trim() || null,
+        metaPixelId: metaPixelId.trim() || null,
+        linkedinPartnerId: linkedinPartnerId.trim() || null,
+      });
     } catch (error) {
       setToast({
         ok: false,

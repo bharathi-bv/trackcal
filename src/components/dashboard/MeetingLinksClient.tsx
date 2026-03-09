@@ -36,7 +36,7 @@ export default function MeetingLinksClient({
   if (eventTypes.length === 0) {
     return (
       <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
-        No active event types.{" "}
+        No active booking links.{" "}
         <Link href="/app/dashboard/event-types" style={{ color: "var(--blue-400)" }}>
           Create one →
         </Link>
@@ -92,13 +92,24 @@ export default function MeetingLinksClient({
                 {url}
               </span>
             </div>
-            <button
-              className={`tc-btn tc-btn--sm ${copied ? "tc-btn--secondary" : "tc-btn--ghost"}`}
-              style={{ flexShrink: 0, minWidth: 72 }}
-              onClick={() => handleCopy(et.slug, et.id)}
-            >
-              {copied ? "Copied!" : "Copy"}
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="tc-btn tc-btn--ghost tc-btn--sm"
+                style={{ minWidth: 64, textDecoration: "none" }}
+              >
+                Open
+              </a>
+              <button
+                className={`tc-btn tc-btn--sm ${copied ? "tc-btn--secondary" : "tc-btn--ghost"}`}
+                style={{ minWidth: 72 }}
+                onClick={() => handleCopy(et.slug, et.id)}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
           </div>
         );
       })}

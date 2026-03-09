@@ -14,7 +14,6 @@ import {
   buildPublicBookingPath,
   ensureHostPublicSlug,
 } from "@/lib/public-booking-links";
-import DashboardNav from "@/components/dashboard/DashboardNav";
 import CsvExportButton from "@/components/dashboard/CsvExportButton";
 import BookingStatusSelect from "@/components/dashboard/BookingStatusSelect";
 import AttributionChartClient from "@/components/analytics/AttributionChartClient";
@@ -33,11 +32,18 @@ type Booking = {
   utm_source: string | null;
   utm_campaign: string | null;
   utm_medium: string | null;
+  parent_page_url: string | null;
+  parent_page_slug: string | null;
   gclid: string | null;
+  gbraid: string | null;
+  wbraid: string | null;
   fbclid: string | null;
+  fbc: string | null;
+  fbp: string | null;
   li_fat_id: string | null;
   ttclid: string | null;
   msclkid: string | null;
+  ga_linker: string | null;
   status: string;
 };
 
@@ -67,7 +73,7 @@ type FilterParams = {
 
 const ANALYTICS_PAGE_SIZE = 100;
 const BOOKING_COLUMNS =
-  "id, created_at, date, time, name, email, phone, utm_source, utm_campaign, utm_medium, gclid, fbclid, li_fat_id, ttclid, msclkid, status";
+  "id, created_at, date, time, name, email, phone, utm_source, utm_campaign, utm_medium, parent_page_url, parent_page_slug, gclid, gbraid, wbraid, fbclid, fbc, fbp, li_fat_id, ttclid, msclkid, ga_linker, status";
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
@@ -327,10 +333,15 @@ function BigStat({ label, value, color }: { label: string; value: string; color?
 
 function ClickIdCell({ booking }: { booking: Booking }) {
   if (booking.gclid) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>gclid:{booking.gclid.slice(0, 12)}…</span>;
+  if (booking.gbraid) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>gbraid:{booking.gbraid.slice(0, 12)}…</span>;
+  if (booking.wbraid) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>wbraid:{booking.wbraid.slice(0, 12)}…</span>;
   if (booking.fbclid) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>fbclid:{booking.fbclid.slice(0, 12)}…</span>;
+  if (booking.fbc) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>fbc:{booking.fbc.slice(0, 12)}…</span>;
+  if (booking.fbp) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>fbp:{booking.fbp.slice(0, 12)}…</span>;
   if (booking.li_fat_id) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>li:{booking.li_fat_id.slice(0, 12)}…</span>;
   if (booking.ttclid) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>ttclid:{booking.ttclid.slice(0, 12)}…</span>;
   if (booking.msclkid) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>msclkid:{booking.msclkid.slice(0, 12)}…</span>;
+  if (booking.ga_linker) return <span style={{ fontFamily: "monospace", fontSize: 11 }}>_gl:{booking.ga_linker.slice(0, 12)}…</span>;
   return <span style={{ color: "var(--text-disabled)" }}>—</span>;
 }
 
@@ -434,7 +445,7 @@ export default async function AnalyticsPage({
     applyBookingFilters(db.from("bookings").select("id", { count: "exact", head: true }).not("utm_source", "is", null), params),
     applyBookingFilters(
       db.from("bookings").select("id", { count: "exact", head: true })
-        .or("gclid.not.is.null,fbclid.not.is.null,li_fat_id.not.is.null,ttclid.not.is.null,msclkid.not.is.null"),
+        .or("gclid.not.is.null,gbraid.not.is.null,wbraid.not.is.null,fbclid.not.is.null,fbc.not.is.null,fbp.not.is.null,li_fat_id.not.is.null,ttclid.not.is.null,msclkid.not.is.null,ga_linker.not.is.null"),
       params
     ),
     db.from("bookings").select("id", { count: "exact", head: true }).eq("status", "confirmed"),
@@ -567,10 +578,7 @@ export default async function AnalyticsPage({
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ minHeight: "100vh" }}>
-      <DashboardNav activeTab="analytics" activeLinks={activeLinks} email={user.email ?? ""} />
-
-      <main className="dashboard-main" style={{ maxWidth: 1100, margin: "0 auto", padding: "var(--space-6)" }}>
+    <main className="dashboard-main" style={{ paddingTop: "var(--space-6)", paddingBottom: "var(--space-6)" }}>
         {/* Header */}
         <div style={{ marginBottom: "var(--space-5)" }}>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>
@@ -942,8 +950,7 @@ export default async function AnalyticsPage({
             )}
           </div>
         )}
-      </main>
-    </div>
+    </main>
   );
 }
 

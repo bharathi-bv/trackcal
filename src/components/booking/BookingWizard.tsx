@@ -5,7 +5,16 @@ import dynamic from "next/dynamic";
 import { useBookingStore } from "@/store/bookingStore";
 import DetailsForm from "@/components/booking/DetailsForm";
 import ThreeDaySlotPicker from "@/components/booking/ThreeDaySlotPicker";
-import { trackBookingStarted, trackBookingCompleted } from "@/lib/analytics";
+import {
+  trackBookingPageview,
+  trackBookingConversion,
+} from "@/lib/analytics";
+import {
+  normalizeTrackingEventAliases,
+  resolveTrackingEventName,
+  type TrackingEventAliases,
+  type TrackingEventKey,
+} from "@/lib/tracking-events";
 
 // Lazy-load TimezonePicker — 600 IANA zones only needed when user opens the dropdown
 const TimezonePicker = dynamic(() => import("@/components/booking/TimezonePicker"), {
@@ -974,16 +983,22 @@ type HostProfileProp = {
   profile_photo_url: string | null;
 };
 
+type BookingTrackingConfigProp = {
+  eventAliases?: TrackingEventAliases | null;
+};
+
 // ── Main Wizard ────────────────────────────────────────────────────────────
 
 export default function BookingWizard({
   eventType,
   hostProfile,
   customQuestions = [],
+  trackingConfig,
 }: {
   eventType?: EventTypeProp;
   hostProfile?: HostProfileProp;
   customQuestions?: import("@/lib/event-type-config").CustomQuestion[];
+  trackingConfig?: BookingTrackingConfigProp;
 }) {
   const { step, setStep, reset, selectedDate, selectedTime, details, customAnswers, utmParams, setDate, setTime } =
     useBookingStore();
@@ -1012,17 +1027,31 @@ export default function BookingWizard({
     }
   }, []);
 
-  // Fire "booking_started" once on mount
-  React.useEffect(() => {
-    trackBookingStarted(utmParams);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const eventAliases = React.useMemo(
+    () => normalizeTrackingEventAliases(trackingConfig?.eventAliases),
+    [trackingConfig?.eventAliases]
+  );
+  const [inviteSent, setInviteSent] = React.useState(false);
 
-  // Fire "booking_completed" when user reaches the confirmed screen
+  // Fire direct-link analytics events (not iframe embed).
   React.useEffect(() => {
-    if (step === 4 && selectedDate && selectedTime) {
-      trackBookingCompleted({ utmParams, date: selectedDate, time: selectedTime, email: details.email });
-    }
-  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (typeof window === "undefined" || window.parent !== window) return;
+    if (directTrackingStartedRef.current) return;
+    directTrackingStartedRef.current = true;
+    trackBookingPageview(utmParams, { eventAliases });
+  }, [eventAliases, utmParams]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined" || window.parent !== window) return;
+    if (step !== 4 || !selectedDate || !selectedTime || !inviteSent) return;
+    const completedKey = `${selectedDate}|${selectedTime}|${details.email}`;
+    if (directCompletedKeyRef.current === completedKey) return;
+    directCompletedKeyRef.current = completedKey;
+    trackBookingConversion(
+      { utmParams, date: selectedDate, time: selectedTime, email: details.email },
+      { eventAliases }
+    );
+  }, [details.email, eventAliases, inviteSent, selectedDate, selectedTime, step, utmParams]);
 
   const [isMobile, setIsMobile] = React.useState(false);
   React.useEffect(() => {
@@ -1064,30 +1093,36 @@ export default function BookingWizard({
   const [msReady, setMsReady] = React.useState(false);
   const [showVisitorCalendarSelection, setShowVisitorCalendarSelection] = React.useState(false);
 
+  const directTrackingStartedRef = React.useRef(false);
+  const directCompletedKeyRef = React.useRef<string | null>(null);
   const embedIdRef = React.useRef<string | undefined>(undefined);
-  const embedStartedRef = React.useRef(false);
+  const embedPageviewSentRef = React.useRef(false);
   const lastSelectedSlotRef = React.useRef<string | null>(null);
-  const lastConfirmedKeyRef = React.useRef<string | null>(null);
+  const lastConversionKeyRef = React.useRef<string | null>(null);
 
   const postEmbedEvent = React.useCallback(
-    (name: string, payload: Record<string, unknown> = {}) => {
+    (name: TrackingEventKey, payload: Record<string, unknown> = {}) => {
       if (typeof window === "undefined" || window.parent === window) return;
       if (!embedIdRef.current) {
         const params = new URLSearchParams(window.location.search);
         embedIdRef.current = params.get("embed_id") ?? undefined;
       }
+      const aliasName = resolveTrackingEventName(name, eventAliases);
       window.parent.postMessage(
         {
           type: "citacal:booking:event",
           embedId: embedIdRef.current,
           name,
-          payload,
+          payload: {
+            ...payload,
+            citacal_event_alias: aliasName,
+          },
           timestamp: Date.now(),
         },
         "*"
       );
     },
-    []
+    [eventAliases]
   );
 
   React.useEffect(() => {
@@ -1276,12 +1311,6 @@ export default function BookingWizard({
   async function handleBookNow() {
     setIsSubmitting(true);
     setSubmitError(null);
-    postEmbedEvent("booking_submitted", {
-      event_slug: eventType?.slug ?? null,
-      event_name: eventType?.name ?? null,
-      date: selectedDate ?? null,
-      time: selectedTime ?? null,
-    });
     try {
       const res = await fetch("/api/bookings", {
         method: "POST",
@@ -1304,15 +1333,10 @@ export default function BookingWizard({
       const data = await res.json().catch(() => ({}));
       setAssignedHosts(Array.isArray(data.assigned_hosts) ? data.assigned_hosts : []);
       setManageUrl(data.manage_url ?? null);
+      setInviteSent(Boolean(data.invite_sent));
       setStep(4);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-      postEmbedEvent("booking_failed", {
-        event_slug: eventType?.slug ?? null,
-        event_name: eventType?.name ?? null,
-        date: selectedDate ?? null,
-        time: selectedTime ?? null,
-      });
     } finally {
       setIsSubmitting(false);
     }
@@ -1322,6 +1346,7 @@ export default function BookingWizard({
     setAssignedHosts([]);
     setManageUrl(null);
     setSubmitError(null);
+    setInviteSent(false);
     setVisitorCal(null);
     reset();
   }
@@ -1338,16 +1363,16 @@ export default function BookingWizard({
   const meta = STEP_META[step] ?? STEP_META[1];
 
   React.useEffect(() => {
-    if (embedStartedRef.current) return;
-    embedStartedRef.current = true;
-    postEmbedEvent("booking_started", {
+    if (embedPageviewSentRef.current) return;
+    embedPageviewSentRef.current = true;
+    postEmbedEvent("booking_pageview", {
       event_slug: eventType?.slug ?? null,
       event_name: eventType?.name ?? null,
     });
   }, [eventType?.name, eventType?.slug, postEmbedEvent]);
 
   React.useEffect(() => {
-    if (!selectedDate || !selectedTime) return;
+    if (step !== 2 || !selectedDate || !selectedTime) return;
     const slotKey = `${selectedDate}|${selectedTime}`;
     if (lastSelectedSlotRef.current === slotKey) return;
     lastSelectedSlotRef.current = slotKey;
@@ -1357,20 +1382,20 @@ export default function BookingWizard({
       date: selectedDate,
       time: selectedTime,
     });
-  }, [eventType?.name, eventType?.slug, postEmbedEvent, selectedDate, selectedTime]);
+  }, [eventType?.name, eventType?.slug, postEmbedEvent, selectedDate, selectedTime, step]);
 
   React.useEffect(() => {
-    if (step !== 4 || !selectedDate || !selectedTime) return;
+    if (step !== 4 || !selectedDate || !selectedTime || !inviteSent) return;
     const confirmedKey = `${selectedDate}|${selectedTime}|${details.email}`;
-    if (lastConfirmedKeyRef.current === confirmedKey) return;
-    lastConfirmedKeyRef.current = confirmedKey;
-    postEmbedEvent("booking_confirmed", {
+    if (lastConversionKeyRef.current === confirmedKey) return;
+    lastConversionKeyRef.current = confirmedKey;
+    postEmbedEvent("booking_conversion", {
       event_slug: eventType?.slug ?? null,
       event_name: eventType?.name ?? null,
       date: selectedDate,
       time: selectedTime,
     });
-  }, [details.email, eventType?.name, eventType?.slug, postEmbedEvent, selectedDate, selectedTime, step]);
+  }, [details.email, eventType?.name, eventType?.slug, inviteSent, postEmbedEvent, selectedDate, selectedTime, step]);
 
   return (
     <div

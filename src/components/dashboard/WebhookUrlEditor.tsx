@@ -5,9 +5,11 @@ import * as React from "react";
 export default function WebhookUrlEditor({
   initialUrls,
   webhookSecret,
+  onSaved,
 }: {
   initialUrls: string[];
   webhookSecret?: string | null;
+  onSaved?: (urls: string[]) => void;
 }) {
   const [urlsText, setUrlsText] = React.useState(initialUrls.join("\n"));
   const [saving, setSaving] = React.useState(false);
@@ -28,6 +30,7 @@ export default function WebhookUrlEditor({
       });
       if (!res.ok) throw new Error("Save failed");
       setToast({ ok: true, msg: "Saved!" });
+      onSaved?.(urls);
     } catch {
       setToast({ ok: false, msg: "Failed to save. Try again." });
     } finally {

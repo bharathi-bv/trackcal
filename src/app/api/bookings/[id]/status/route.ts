@@ -45,7 +45,7 @@ export async function PATCH(
   const { data: existingBooking } = await db
     .from("bookings")
     .select(
-      "id, created_at, date, time, status, name, email, phone, notes, event_slug, assigned_to, assigned_host_ids, calendar_event_id, calendar_events, zoom_meeting_id, custom_answers, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, li_fat_id, ttclid, msclkid"
+      "id, created_at, date, time, status, name, email, phone, notes, event_slug, assigned_to, assigned_host_ids, calendar_event_id, calendar_events, zoom_meeting_id, custom_answers, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, gbraid, wbraid, fbclid, fbc, fbp, li_fat_id, ttclid, msclkid, ga_linker"
     )
     .eq("id", id)
     .maybeSingle();

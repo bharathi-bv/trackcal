@@ -1,9 +1,14 @@
 # CitaCal Project Context
 
-Last updated: 2026-02-27
+Last updated: 2026-03-05
 
 ## Purpose
 CitaCal is an attribution-safe scheduling app with team-aware round-robin scheduling. It captures UTM/click IDs on entry, preserves attribution through booking conversion, and stores attribution with each booking.
+
+## Brand + Copy Rules
+- Product name in user-facing copy is always `CitaCal` (not Trackcal/TrackCal).
+- Never show `localhost` or local development URLs in user-facing app screens or Help Docs.
+- For public examples/previews/snippets, use `https://citacal.com` (or a real custom domain/subdomain).
 
 ## Tech Stack
 - Next.js 16 (App Router)
@@ -73,6 +78,12 @@ CitaCal is an attribution-safe scheduling app with team-aware round-robin schedu
 - Attribution KPIs (source/campaign/click-id coverage)
 - Inline booking status updates
 
+### Integrations2 (`/app/dashboard/integrations2`)
+- Direct links mode: accepts custom script URLs that run on CitaCal booking link pages.
+- Embed mode: booking lifecycle events are sent to parent-page `dataLayer` by `citacal-embed.js`.
+- Shared event alias map supports custom naming conventions across direct and embed tracking events.
+- Optional toggle controls whether embed mode emits `booking_pageview`.
+
 ### Event Types (`/app/dashboard/event-types`)
 - Search/filter event types
 - Create/edit in right-side drawer with sticky section tabs
@@ -138,6 +149,7 @@ CitaCal is an attribution-safe scheduling app with team-aware round-robin schedu
   - `assigned_member_ids uuid[]`
 - `host_settings`
   - host profile + host Google tokens + default weekly availability
+  - tracking config: `booking_link_header_code`, `booking_link_footer_code`, `event_aliases`, `embed_send_pageview`
 - `team_members`
   - member profile + member Google tokens + round-robin metadata + optional `user_id`
 - `auth.users`

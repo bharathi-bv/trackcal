@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFallbackAvailabilityScheduleId } from "@/lib/availability-schedules";
+import {
+  getFallbackAvailabilityScheduleId,
+  resolveAvailabilityRules,
+} from "@/lib/availability-schedules";
 import { createServerClient } from "@/lib/supabase";
 import { requireApiUser } from "@/lib/api-auth";
 import { z } from "zod";
@@ -216,6 +219,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const resolvedAvailability = await resolveAvailabilityRules({
+    weeklyAvailability: weekly,
+    availabilityScheduleId,
+    blockedDates: blockers.dates,
+    blockedWeekdays: blockers.weekdays,
+    db,
+  });
+  const persistedWeekly = resolvedAvailability.weekly_availability;
+  const persistedBlockers = resolvedAvailability.blockers;
+
   // Auto-generate slug from name if not supplied
   const slug = parsed.data.slug?.trim() || slugify(parsed.data.name);
 
@@ -228,40 +241,59 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Slug already exists. Use a different one." }, { status: 409 });
   }
 
+  const insertPayload = {
+    ...parsed.data,
+    slug,
+    description: parsed.data.description || null,
+    title_template: parsed.data.title_template || null,
+    location_type: parsed.data.location_type || "google_meet",
+    location_value: parsed.data.location_value || null,
+    booking_window_type: parsed.data.booking_window_type || "rolling",
+    booking_window_start_date:
+      parsed.data.booking_window_type === "fixed"
+        ? parsed.data.booking_window_start_date || null
+        : null,
+    booking_window_end_date:
+      parsed.data.booking_window_type === "fixed"
+        ? parsed.data.booking_window_end_date || null
+        : null,
+    max_bookings_per_day: parsed.data.max_bookings_per_day || null,
+    max_bookings_per_slot: parsed.data.max_bookings_per_slot || null,
+    availability_schedule_id: availabilityScheduleId,
+    weekly_availability: persistedWeekly,
+    blocked_dates: persistedBlockers.dates,
+    blocked_weekdays: persistedBlockers.weekdays,
+    team_scheduling_mode: parsed.data.team_scheduling_mode,
+    collective_required_member_ids: parsed.data.collective_required_member_ids,
+    collective_show_availability_tiers: parsed.data.collective_show_availability_tiers,
+    collective_min_available_hosts: parsed.data.collective_min_available_hosts || null,
+    utm_links: normalizeUtmLinks(parsed.data.utm_links ?? []),
+    custom_questions: parsed.data.custom_questions ?? [],
+  };
+
   const { data, error } = await db
     .from("event_types")
-    .insert({
-      ...parsed.data,
-      slug,
-      description: parsed.data.description || null,
-      title_template: parsed.data.title_template || null,
-      location_type: parsed.data.location_type || "google_meet",
-      location_value: parsed.data.location_value || null,
-      booking_window_type: parsed.data.booking_window_type || "rolling",
-      booking_window_start_date:
-        parsed.data.booking_window_type === "fixed"
-          ? parsed.data.booking_window_start_date || null
-          : null,
-      booking_window_end_date:
-        parsed.data.booking_window_type === "fixed"
-          ? parsed.data.booking_window_end_date || null
-          : null,
-      max_bookings_per_day: parsed.data.max_bookings_per_day || null,
-      max_bookings_per_slot: parsed.data.max_bookings_per_slot || null,
-      availability_schedule_id: availabilityScheduleId,
-      weekly_availability: weekly,
-      blocked_dates: blockers.dates,
-      blocked_weekdays: blockers.weekdays,
-      team_scheduling_mode: parsed.data.team_scheduling_mode,
-      collective_required_member_ids: parsed.data.collective_required_member_ids,
-      collective_show_availability_tiers: parsed.data.collective_show_availability_tiers,
-      collective_min_available_hosts: parsed.data.collective_min_available_hosts || null,
-      utm_links: normalizeUtmLinks(parsed.data.utm_links ?? []),
-      custom_questions: parsed.data.custom_questions ?? [],
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[event-types][POST] insert failed", {
+      message: error.message,
+      details: error.details ?? null,
+      hint: error.hint ?? null,
+      code: error.code ?? null,
+      payloadKeys: Object.keys(insertPayload as Record<string, unknown>),
+    });
+    return NextResponse.json(
+      {
+        error: error.message,
+        details: error.details ?? null,
+        hint: error.hint ?? null,
+        code: error.code ?? null,
+      },
+      { status: 500 }
+    );
+  }
   return NextResponse.json(data, { status: 201 });
 }

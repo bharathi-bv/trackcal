@@ -15,7 +15,7 @@
  * Optional script attributes:
  * - data-citacal-forward="false" -> disables auto forwarding to dataLayer/gtag/mixpanel
  * - data-citacal-event-prefix="citacal_" -> analytics event prefix
- * - data-citacal-event-map='{"booking_confirmed":"lead_submitted"}' -> per-event override
+ * - data-citacal-event-map='{"booking_conversion":"lead_submitted"}' -> per-event override
  * - data-citacal-fallback="false" -> disables fallback CTA when iframe can't load
  * - data-citacal-timeout-ms="12000" -> fallback timeout in milliseconds
  */
@@ -25,6 +25,13 @@
   var inferredBase = script && script.src ? new URL(script.src).origin : window.location.origin;
   var baseUrl = (configuredBase || inferredBase).replace(/\/+$/, "");
   var baseOrigin = new URL(baseUrl).origin;
+  var baseHostname = new URL(baseUrl).hostname.toLowerCase();
+  var useBookPrefix =
+    baseHostname === "citacal.com" ||
+    /\.citacal\.com$/.test(baseHostname) ||
+    baseHostname === "localhost" ||
+    baseHostname === "127.0.0.1" ||
+    /\.localhost$/.test(baseHostname);
   var autoForward = !(script && script.dataset && script.dataset.citacalForward === "false");
   var eventPrefix = (script && script.dataset && script.dataset.citacalEventPrefix) || "citacal_";
   var fallbackEnabled = !(script && script.dataset && script.dataset.citacalFallback === "false");
@@ -56,6 +63,17 @@
     return "tc_" + Math.random().toString(36).slice(2, 10);
   }
 
+  function readCookie(name) {
+    var escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    var match = document.cookie.match(new RegExp("(?:^|; )" + escaped + "=([^;]*)"));
+    if (!match || !match[1]) return null;
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return match[1];
+    }
+  }
+
   function sanitizePayload(raw) {
     var out = {};
     if (!raw || typeof raw !== "object") return out;
@@ -70,18 +88,37 @@
     return out;
   }
 
+  function getParentPageSlug() {
+    var parentPathParts = (window.location.pathname || "/")
+      .split("/")
+      .filter(Boolean);
+    if (!parentPathParts.length) return "home";
+    try {
+      return decodeURIComponent(parentPathParts[parentPathParts.length - 1] || "");
+    } catch {
+      return parentPathParts[parentPathParts.length - 1] || "home";
+    }
+  }
+
   function dispatchWindowEvent(type, detail) {
     if (typeof window.CustomEvent !== "function") return;
     window.dispatchEvent(new CustomEvent(type, { detail: detail }));
   }
 
   function forwardAnalytics(name, payload) {
-    var mapped = eventMap[name];
+    var aliasFromPayload =
+      payload && typeof payload.citacal_event_alias === "string"
+        ? payload.citacal_event_alias.trim()
+        : "";
+    var mapped = aliasFromPayload || eventMap[name];
     var prefixedName =
       typeof mapped === "string" && mapped.trim()
         ? mapped.trim()
         : eventPrefix + name;
     var analyticsPayload = Object.assign({ citacal_event: name }, payload);
+    if (Object.prototype.hasOwnProperty.call(analyticsPayload, "citacal_event_alias")) {
+      delete analyticsPayload.citacal_event_alias;
+    }
 
     if (autoForward && Array.isArray(window.dataLayer)) {
       window.dataLayer.push(
@@ -139,22 +176,47 @@
     // Forward attribution params from parent page URL so embedded booking
     // captures campaign context exactly like direct /book visits.
     var parentParams = new URLSearchParams(window.location.search);
+    var parentPageSlug = getParentPageSlug();
     var TRACKED_KEYS = [
       "utm_source",
       "utm_medium",
       "utm_campaign",
       "utm_term",
       "utm_content",
+      "parent_page_url",
+      "parent_page_slug",
       "gclid",
+      "gbraid",
+      "wbraid",
       "fbclid",
+      "fbc",
+      "fbp",
       "li_fat_id",
       "ttclid",
       "msclkid",
+      "_gl",
     ];
     TRACKED_KEYS.forEach(function (key) {
       var val = parentParams.get(key);
       if (val) params.set(key, val);
     });
+
+    if (!params.get("parent_page_url")) {
+      params.set("parent_page_url", window.location.href);
+    }
+    if (!params.get("parent_page_slug") && parentPageSlug) {
+      params.set("parent_page_slug", parentPageSlug);
+    }
+
+    // Recover Meta identifiers from first-party cookies if URL params are absent.
+    if (!params.get("fbc")) {
+      var fbcCookie = readCookie("_fbc");
+      if (fbcCookie) params.set("fbc", fbcCookie);
+    }
+    if (!params.get("fbp")) {
+      var fbpCookie = readCookie("_fbp");
+      if (fbpCookie) params.set("fbp", fbpCookie);
+    }
 
     var bookingParams = params.toString();
 
@@ -163,7 +225,10 @@
 
     var bookingUrl = null;
     if (hostSlug && eventSlug) {
-      bookingUrl = baseUrl + "/" + hostSlug + "/" + eventSlug + (bookingParams ? "?" + bookingParams : "");
+      var bookingPath = useBookPrefix
+        ? "/book/" + hostSlug + "/" + eventSlug
+        : "/" + hostSlug + "/" + eventSlug;
+      bookingUrl = baseUrl + bookingPath + (bookingParams ? "?" + bookingParams : "");
     }
 
     return {
@@ -332,6 +397,8 @@
     payload.embed_id = data.embedId || null;
     payload.event_slug = payload.event_slug || frame.eventSlug || null;
     payload.parent_url = window.location.href;
+    payload.parent_page_url = window.location.href;
+    payload.parent_page_slug = getParentPageSlug() || null;
     payload.timestamp = data.timestamp || Date.now();
 
     emitBookingEvent(eventName, payload);

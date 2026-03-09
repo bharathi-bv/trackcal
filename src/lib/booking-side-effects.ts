@@ -39,11 +39,18 @@ export type BookingSideEffectBooking = {
   utm_campaign?: string | null;
   utm_term?: string | null;
   utm_content?: string | null;
+  parent_page_url?: string | null;
+  parent_page_slug?: string | null;
   gclid?: string | null;
+  gbraid?: string | null;
+  wbraid?: string | null;
   fbclid?: string | null;
+  fbc?: string | null;
+  fbp?: string | null;
   li_fat_id?: string | null;
   ttclid?: string | null;
   msclkid?: string | null;
+  ga_linker?: string | null;
   zoom_meeting_id?: string | null;
 };
 
@@ -198,6 +205,8 @@ function buildWebhookPayload(args: {
       assigned_to: booking.assigned_to,
       assigned_host_ids: normalizeMemberIds(booking.assigned_host_ids, booking.assigned_to),
       custom_answers: booking.custom_answers ?? null,
+      parent_page_url: booking.parent_page_url ?? null,
+      parent_page_slug: booking.parent_page_slug ?? null,
     },
     assigned_member: assignedMember,
     assigned_hosts: assignedHostsResponse,
@@ -210,10 +219,15 @@ function buildWebhookPayload(args: {
     },
     click_ids: {
       gclid: booking.gclid ?? null,
+      gbraid: booking.gbraid ?? null,
+      wbraid: booking.wbraid ?? null,
       fbclid: booking.fbclid ?? null,
+      fbc: booking.fbc ?? null,
+      fbp: booking.fbp ?? null,
       li_fat_id: booking.li_fat_id ?? null,
       ttclid: booking.ttclid ?? null,
       msclkid: booking.msclkid ?? null,
+      ga_linker: booking.ga_linker ?? null,
     },
     ...(changes ? { changes } : {}),
   };
@@ -237,11 +251,18 @@ function toSheetRecord(booking: BookingSideEffectBooking) {
     utm_campaign: booking.utm_campaign ?? null,
     utm_term: booking.utm_term ?? null,
     utm_content: booking.utm_content ?? null,
+    parent_page_url: booking.parent_page_url ?? null,
+    parent_page_slug: booking.parent_page_slug ?? null,
     gclid: booking.gclid ?? null,
+    gbraid: booking.gbraid ?? null,
+    wbraid: booking.wbraid ?? null,
     fbclid: booking.fbclid ?? null,
+    fbc: booking.fbc ?? null,
+    fbp: booking.fbp ?? null,
     li_fat_id: booking.li_fat_id ?? null,
     ttclid: booking.ttclid ?? null,
     msclkid: booking.msclkid ?? null,
+    ga_linker: booking.ga_linker ?? null,
     zoom_meeting_id: booking.zoom_meeting_id ?? null,
     custom_answers: booking.custom_answers ?? null,
   };

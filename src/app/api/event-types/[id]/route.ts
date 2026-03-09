@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getFallbackAvailabilityScheduleId } from "@/lib/availability-schedules";
+import {
+  getFallbackAvailabilityScheduleId,
+  resolveAvailabilityRules,
+} from "@/lib/availability-schedules";
 import { createServerClient } from "@/lib/supabase";
 import { requireApiUser } from "@/lib/api-auth";
 import { z } from "zod";
@@ -219,6 +222,24 @@ export async function PATCH(
         : current.availability_schedule_id ?? (await getFallbackAvailabilityScheduleId(db))
       : null;
 
+  const shouldSyncResolvedAvailability =
+    parsed.data.weekly_availability !== undefined ||
+    parsed.data.availability_schedule_id !== undefined ||
+    parsed.data.blocked_dates !== undefined ||
+    parsed.data.blocked_weekdays !== undefined ||
+    nextWeekly === null;
+
+  const resolvedAvailability = shouldSyncResolvedAvailability
+    ? await resolveAvailabilityRules({
+        weeklyAvailability: nextWeekly,
+        availabilityScheduleId: nextAvailabilityScheduleId,
+        blockedDates: nextBlockers.dates,
+        blockedWeekdays: nextBlockers.weekdays,
+        db,
+      })
+    : null;
+  const persistedWeekly = resolvedAvailability?.weekly_availability ?? nextWeekly;
+
   const teamSchedulingError = validateTeamScheduling({
     assigned_member_ids: nextAssignedMemberIds,
     team_scheduling_mode: nextTeamSchedulingMode,
@@ -284,7 +305,7 @@ export async function PATCH(
           ? nextAvailabilityScheduleId
           : undefined,
       weekly_availability:
-        parsed.data.weekly_availability !== undefined || nextWeekly === null ? nextWeekly : undefined,
+        shouldSyncResolvedAvailability ? persistedWeekly : undefined,
       blocked_dates:
         parsed.data.blocked_dates !== undefined ? nextBlockers.dates : undefined,
       blocked_weekdays:

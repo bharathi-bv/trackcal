@@ -10,13 +10,36 @@ export function slugifyPublicSegment(value: string) {
     .slice(0, 48);
 }
 
-export function buildPublicBookingPath(hostSlug: string, eventSlug: string) {
-  return `/${hostSlug}/${eventSlug}`;
+export function shouldUseBookPathPrefix(baseUrl: string) {
+  const normalized = baseUrl.trim();
+  if (!normalized) return true;
+
+  try {
+    const hostname = new URL(normalized).hostname.toLowerCase();
+    return (
+      hostname === "citacal.com" ||
+      hostname.endsWith(".citacal.com") ||
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".localhost")
+    );
+  } catch {
+    return normalized.includes("citacal.com");
+  }
+}
+
+export function buildPublicBookingPath(
+  hostSlug: string,
+  eventSlug: string,
+  withBookPrefix = true
+) {
+  return withBookPrefix ? `/book/${hostSlug}/${eventSlug}` : `/${hostSlug}/${eventSlug}`;
 }
 
 export function buildPublicBookingUrl(baseUrl: string, hostSlug: string, eventSlug: string) {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
-  return `${normalizedBase}${buildPublicBookingPath(hostSlug, eventSlug)}`;
+  const withBookPrefix = shouldUseBookPathPrefix(normalizedBase);
+  return `${normalizedBase}${buildPublicBookingPath(hostSlug, eventSlug, withBookPrefix)}`;
 }
 
 function deriveHostSlugSeed({

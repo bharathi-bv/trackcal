@@ -1,6 +1,7 @@
 import BookingWizard from "@/components/booking/BookingWizard";
 import EmbedAutoResize from "@/components/embed/EmbedAutoResize";
 import { createServerClient } from "@/lib/supabase";
+import { normalizeTrackingEventAliases } from "@/lib/tracking-events";
 
 export default async function EmbedPage({
   searchParams,
@@ -22,13 +23,14 @@ export default async function EmbedPage({
       : Promise.resolve({ data: null }),
     db
       .from("host_settings")
-      .select("host_name, profile_photo_url")
+      .select("host_name, profile_photo_url, event_aliases")
       .limit(1)
       .maybeSingle(),
   ]);
 
   const eventType = eventTypeResult.data;
   const hostProfile = hostSettingsResult.data;
+  const eventAliases = normalizeTrackingEventAliases(hostProfile?.event_aliases ?? {});
 
   return (
     <main
@@ -51,6 +53,7 @@ export default async function EmbedPage({
               }
             : undefined
         }
+        trackingConfig={{ eventAliases }}
       />
     </main>
   );

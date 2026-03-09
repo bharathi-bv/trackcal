@@ -25,6 +25,8 @@ export type BookingWebhookPayload = {
     assigned_to: string | null;
     assigned_host_ids?: string[];
     custom_answers: Record<string, string | string[]> | null;
+    parent_page_url?: string | null;
+    parent_page_slug?: string | null;
   };
   assigned_member: { name: string; photo_url: string | null } | null;
   assigned_hosts?: Array<{ id: string; name: string; photo_url: string | null }>;
@@ -37,10 +39,15 @@ export type BookingWebhookPayload = {
   };
   click_ids: {
     gclid: string | null;
+    gbraid: string | null;
+    wbraid: string | null;
     fbclid: string | null;
+    fbc: string | null;
+    fbp: string | null;
     li_fat_id: string | null;
     ttclid: string | null;
     msclkid: string | null;
+    ga_linker: string | null;
   };
   changes?: {
     previous_status?: string | null;

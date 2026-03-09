@@ -1,11 +1,9 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import MeetingLinksClient from "./MeetingLinksClient";
 import BookingCalendarClient from "./BookingCalendarClient";
 
-type UpcomingBooking = {
+export type UpcomingBooking = {
   id: string;
   date: string;
   time: string;
@@ -15,43 +13,115 @@ type UpcomingBooking = {
   event_slug: string | null;
 };
 
-type EventType = {
-  id: string;
-  name: string;
-  slug: string;
-  duration: number;
-  is_active: boolean;
-};
+// ── Date helpers ──────────────────────────────────────────────────────────────
 
-function formatDateLabel(iso: string) {
-  const [y, mo, da] = iso.split("-").map(Number);
-  return new Date(y, mo - 1, da).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
+function isoFromDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function adjacentISO(iso: string, delta: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return isoFromDate(new Date(y, m - 1, d + delta));
+}
+
+function daysBetween(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  return Math.round(
+    (new Date(by, bm - 1, bd).getTime() - new Date(ay, am - 1, ad).getTime()) / 86400000
+  );
+}
+
+function sectionLabel(iso: string, todayISO: string): string {
+  const diff = daysBetween(todayISO, iso);
+  if (diff === -1) return "Yesterday";
+  if (diff === 0)  return "Today";
+  if (diff === 1)  return "Tomorrow";
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
   });
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    confirmed: { label: "Confirmed", cls: "tc-pill--success" },
-    pending:   { label: "Pending",   cls: "tc-pill--warning" },
-    cancelled: { label: "Cancelled", cls: "tc-pill--danger"  },
-    no_show:   { label: "No Show",   cls: "tc-pill--neutral" },
-  };
-  const { label, cls } = map[status] ?? { label: status, cls: "tc-pill--neutral" };
-  return <span className={`tc-pill ${cls}`}>{label}</span>;
+// ── Status select ─────────────────────────────────────────────────────────────
+
+const STATUS_OPTIONS = [
+  { value: "confirmed", label: "Confirmed" },
+  { value: "pending",   label: "Pending"   },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "no_show",   label: "No Show"   },
+];
+
+const STATUS_STYLE: Record<string, { color: string; background: string; border: string }> = {
+  confirmed: { color: "#2d9969",  background: "rgba(61,170,122,0.10)",  border: "rgba(61,170,122,0.25)"  },
+  pending:   { color: "#b45309",  background: "rgba(217,119,6,0.10)",   border: "rgba(217,119,6,0.25)"   },
+  cancelled: { color: "#dc2626",  background: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.22)"   },
+  no_show:   { color: "#6b7280",  background: "rgba(107,114,128,0.08)", border: "rgba(107,114,128,0.20)" },
+};
+
+function StatusSelect({
+  bookingId,
+  value,
+  onChange,
+}: {
+  bookingId: string;
+  value: string;
+  onChange: (id: string, newStatus: string) => void;
+}) {
+  const s = STATUS_STYLE[value] ?? STATUS_STYLE.no_show;
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(bookingId, e.target.value)}
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        padding: "3px 22px 3px 8px",
+        borderRadius: 999,
+        border: `1px solid ${s.border}`,
+        background: s.background,
+        color: s.color,
+        cursor: "pointer",
+        outline: "none",
+        appearance: "none",
+        WebkitAppearance: "none",
+        backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+        backgroundRepeat: "no-repeat",
+        backgroundPosition: "right 7px center",
+        fontFamily: "var(--font-sans)",
+        flexShrink: 0,
+      }}
+    >
+      {STATUS_OPTIONS.map((opt) => (
+        <option key={opt.value} value={opt.value}>{opt.label}</option>
+      ))}
+    </select>
+  );
 }
 
-function BookingRow({ booking }: { booking: UpcomingBooking }) {
+// ── Booking row ───────────────────────────────────────────────────────────────
+
+function BookingRow({
+  booking,
+  status,
+  onStatusChange,
+  dimmed,
+}: {
+  booking: UpcomingBooking;
+  status: string;
+  onStatusChange: (id: string, newStatus: string) => void;
+  dimmed: boolean;
+}) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: "var(--space-4)",
+        gap: "var(--space-3)",
         padding: "var(--space-3) 0",
         borderBottom: "1px solid var(--border-subtle)",
+        opacity: dimmed ? 0.5 : 1,
+        transition: "opacity 0.12s",
       }}
     >
       <span
@@ -59,21 +129,14 @@ function BookingRow({ booking }: { booking: UpcomingBooking }) {
           fontSize: 13,
           fontWeight: 600,
           color: "var(--text-secondary)",
-          width: 76,
+          width: 72,
           flexShrink: 0,
         }}
       >
         {booking.time}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <span
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: "var(--text-primary)",
-            display: "block",
-          }}
-        >
+        <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", display: "block" }}>
           {booking.name}
         </span>
         <span
@@ -89,40 +152,117 @@ function BookingRow({ booking }: { booking: UpcomingBooking }) {
           {booking.email}
         </span>
       </div>
-      <StatusBadge status={booking.status} />
+      <StatusSelect bookingId={booking.id} value={status} onChange={onStatusChange} />
     </div>
   );
 }
 
+// ── Day section ───────────────────────────────────────────────────────────────
+
+function DaySection({
+  label,
+  dateISO,
+  todayISO,
+  bookings,
+  statuses,
+  onStatusChange,
+}: {
+  label: string;
+  dateISO: string;
+  todayISO: string;
+  bookings: UpcomingBooking[];
+  statuses: Record<string, string>;
+  onStatusChange: (id: string, newStatus: string) => void;
+}) {
+  const isPast = dateISO < todayISO;
+  const dayBookings = bookings.filter((b) => b.date === dateISO);
+
+  return (
+    <div className="tc-card" style={{ padding: "var(--space-5) var(--space-6)" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: dayBookings.length > 0 ? "var(--space-3)" : 0,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.10em",
+            textTransform: "uppercase",
+            color: isPast ? "var(--text-tertiary)" : "var(--text-secondary)",
+          }}
+        >
+          {label}
+        </span>
+        <span className={`tc-pill ${dayBookings.length > 0 && !isPast ? "tc-pill--primary" : "tc-pill--neutral"}`}>
+          {dayBookings.length} meeting{dayBookings.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {dayBookings.length > 0 ? (
+        <div>
+          {dayBookings.map((b, i) => (
+            <div key={b.id} style={i === dayBookings.length - 1 ? { borderBottom: "none" } : {}}>
+              <BookingRow
+                booking={b}
+                status={statuses[b.id] ?? b.status}
+                onStatusChange={onStatusChange}
+                dimmed={isPast}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
+          No meetings {label.toLowerCase()}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function BookingsDashboardClient({
   bookings,
-  activeEventTypes,
-  baseUrl,
-  hostPublicSlug,
   todayISO,
 }: {
   bookings: UpcomingBooking[];
-  activeEventTypes: EventType[];
-  baseUrl: string;
-  hostPublicSlug: string;
   todayISO: string;
 }) {
   const [selectedDate, setSelectedDate] = React.useState<string>(todayISO);
 
-  const selectedBookings = React.useMemo(
-    () => bookings.filter((b) => b.date === selectedDate),
-    [bookings, selectedDate]
-  );
+  const [statuses, setStatuses] = React.useState<Record<string, string>>(() => {
+    const m: Record<string, string> = {};
+    bookings.forEach((b) => { m[b.id] = b.status; });
+    return m;
+  });
 
-  const isToday = selectedDate === todayISO;
-  const isPast  = selectedDate < todayISO;
-  const hasAnyUpcoming = bookings.length > 0;
+  async function handleStatusChange(bookingId: string, newStatus: string) {
+    setStatuses((prev) => ({ ...prev, [bookingId]: newStatus }));
+    try {
+      await fetch(`/api/bookings/${bookingId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+    } catch {
+      // best-effort
+    }
+  }
 
-  const dateLabel = isToday
-    ? `Today — ${formatDateLabel(selectedDate)}`
-    : isPast
-    ? `Past — ${formatDateLabel(selectedDate)}`
-    : `Upcoming — ${formatDateLabel(selectedDate)}`;
+  const prevISO = adjacentISO(selectedDate, -1);
+  const nextISO = adjacentISO(selectedDate, +1);
+
+  const sections = [
+    { dateISO: prevISO,      label: sectionLabel(prevISO, todayISO)      },
+    { dateISO: selectedDate, label: sectionLabel(selectedDate, todayISO) },
+    { dateISO: nextISO,      label: sectionLabel(nextISO, todayISO)      },
+  ];
 
   return (
     <div
@@ -133,117 +273,22 @@ export default function BookingsDashboardClient({
         alignItems: "start",
       }}
     >
-      {/* ── Left column ─────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
-
-        {/* Selected-date meetings card */}
-        <div
-          className="tc-card"
-          style={{
-            padding: "var(--space-5) var(--space-6)",
-            opacity: isToday ? 0.72 : 1,
-            transition: "opacity 0.15s",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: selectedBookings.length > 0 ? "var(--space-4)" : 0,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.10em",
-                textTransform: "uppercase",
-                color: "var(--text-tertiary)",
-              }}
-            >
-              {dateLabel}
-            </span>
-            <span
-              className={`tc-pill ${
-                selectedBookings.length > 0 ? "tc-pill--primary" : "tc-pill--neutral"
-              }`}
-            >
-              {selectedBookings.length} meeting
-              {selectedBookings.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-
-          {selectedBookings.length > 0 ? (
-            <div>
-              {selectedBookings.map((b, i) => (
-                <div
-                  key={b.id}
-                  style={i === selectedBookings.length - 1 ? { borderBottom: "none" } : {}}
-                >
-                  <BookingRow booking={b} />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: 0 }}>
-              No meetings {isToday ? "today" : "on this day"}.
-            </p>
-          )}
-        </div>
-
-        {/* Empty state — no upcoming bookings at all */}
-        {!hasAnyUpcoming && (
-          <div
-            className="tc-card"
-            style={{
-              padding: "var(--space-10) var(--space-6)",
-              textAlign: "center",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "var(--space-3)",
-            }}
-          >
-            <p style={{ fontSize: 14, color: "var(--text-tertiary)", margin: 0 }}>
-              No upcoming meetings. Share a meeting link below to get bookings.
-            </p>
-            <Link href="/app/analytics" className="tc-btn tc-btn--ghost tc-btn--sm">
-              View all past bookings →
-            </Link>
-          </div>
-        )}
-
-        {/* Active Meeting Links */}
-        <div className="tc-card" style={{ padding: "var(--space-5) var(--space-6)" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: "var(--space-4)",
-            }}
-          >
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.10em",
-                textTransform: "uppercase",
-                color: "var(--text-tertiary)",
-              }}
-            >
-              Active Meeting Links
-            </span>
-            <Link href="/app/dashboard/event-types" className="tc-btn tc-btn--ghost tc-btn--sm">
-              Manage
-            </Link>
-          </div>
-          <MeetingLinksClient eventTypes={activeEventTypes} baseUrl={baseUrl} hostPublicSlug={hostPublicSlug} />
-        </div>
+      {/* ── Left: sliding 3-day view ──────────────────────────────────────── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+        {sections.map((section) => (
+          <DaySection
+            key={section.dateISO}
+            label={section.label}
+            dateISO={section.dateISO}
+            todayISO={todayISO}
+            bookings={bookings}
+            statuses={statuses}
+            onStatusChange={handleStatusChange}
+          />
+        ))}
       </div>
 
-      {/* ── Right column — sticky interactive calendar ───────────────────── */}
+      {/* ── Right: sticky calendar ─────────────────────────────────────────── */}
       <div style={{ position: "sticky", top: "78px" }}>
         <BookingCalendarClient
           bookings={bookings}

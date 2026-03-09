@@ -82,10 +82,15 @@ type BookingRow = {
   utm_term: string | null;
   utm_content: string | null;
   gclid: string | null;
+  gbraid: string | null;
+  wbraid: string | null;
   fbclid: string | null;
+  fbc: string | null;
+  fbp: string | null;
   li_fat_id: string | null;
   ttclid: string | null;
   msclkid: string | null;
+  ga_linker: string | null;
   manage_token_expires_at: string | null;
 };
 
@@ -161,7 +166,7 @@ async function loadBookingByManageToken({
   const { data } = await db
     .from("bookings")
     .select(
-      "id, created_at, date, time, status, name, email, phone, notes, event_slug, assigned_to, assigned_host_ids, calendar_event_id, calendar_events, zoom_meeting_id, custom_answers, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, fbclid, li_fat_id, ttclid, msclkid, manage_token_expires_at"
+      "id, created_at, date, time, status, name, email, phone, notes, event_slug, assigned_to, assigned_host_ids, calendar_event_id, calendar_events, zoom_meeting_id, custom_answers, utm_source, utm_medium, utm_campaign, utm_term, utm_content, gclid, gbraid, wbraid, fbclid, fbc, fbp, li_fat_id, ttclid, msclkid, ga_linker, manage_token_expires_at"
     )
     .eq("manage_token_hash", hash)
     .maybeSingle();

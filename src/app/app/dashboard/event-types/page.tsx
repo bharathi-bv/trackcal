@@ -1,8 +1,6 @@
-import { headers } from "next/headers";
 import { getAvailabilitySchedules } from "@/lib/availability-schedules";
 import { createServerClient } from "@/lib/supabase";
 import { ensureHostPublicSlug } from "@/lib/public-booking-links";
-import DashboardNav from "@/components/dashboard/DashboardNav";
 import EventTypesClient from "@/components/dashboard/EventTypesClient";
 
 type EventStats = { total: number; thisMonth: number; topSource: string | null };
@@ -13,15 +11,14 @@ type EventTypeStatsRow = {
   top_source: string | null;
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function EventTypesPage() {
   const db = createServerClient();
   const thisMonthPrefix = new Date().toISOString().slice(0, 7); // e.g. "2026-02"
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const fallbackBaseUrl = host
-    ? `${proto}://${host}`
-    : process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "https://citacal.com";
+  // Pass custom domain or NEXT_PUBLIC_APP_URL; empty string lets client use window.location.origin
+  const fallbackBaseUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
 
   const [hostPublicSlug, { data: eventTypes }, { data: hostSettings }, { data: statsRows }, { data: teamMembers }, availabilitySchedules] = await Promise.all([
     ensureHostPublicSlug({ db }),
@@ -48,21 +45,7 @@ export default async function EventTypesPage() {
   });
 
   return (
-    <div style={{ minHeight: "100vh" }}>
-      <DashboardNav
-        activeTab="event-types"
-        activeLinks={activeLinks}
-        email=""
-      />
-
-      <main
-        className="dashboard-main"
-        style={{
-          maxWidth: 1320,
-          margin: "0 auto",
-          padding: "var(--space-8) var(--space-6)",
-        }}
-      >
+    <main className="dashboard-main">
         <EventTypesClient
           initialEventTypes={eventTypes ?? []}
           initialAvailabilitySchedules={availabilitySchedules}
@@ -72,7 +55,6 @@ export default async function EventTypesPage() {
           hostPublicSlug={hostSettings?.public_slug ?? hostPublicSlug}
           zoomConnected={Boolean((hostSettings as { zoom_refresh_token?: string | null } | null)?.zoom_refresh_token)}
         />
-      </main>
-    </div>
+    </main>
   );
 }

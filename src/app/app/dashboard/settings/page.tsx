@@ -1,9 +1,7 @@
 import { Suspense } from "react";
 import { createAuthServerClient } from "@/lib/supabase-server";
 import { createServerClient } from "@/lib/supabase";
-import { getHostCalendarConnectionState } from "@/lib/calendar-connections";
 import { ensureHostPublicSlug } from "@/lib/public-booking-links";
-import DashboardNav from "@/components/dashboard/DashboardNav";
 import SettingsClient from "@/components/dashboard/SettingsClient";
 
 export default async function SettingsPage() {
@@ -12,7 +10,9 @@ export default async function SettingsPage() {
     data: { user },
   } = await supabase.auth.getUser();
   const db = createServerClient();
-  const [hostPublicSlug, { data: hostSettings }, { data: teamMembers }, hostCalendarState, { count: activeLinksCount }] = await Promise.all([
+  const userEmailDomain = user?.email ? user.email.split("@")[1]?.toLowerCase() ?? null : null;
+
+  const [hostPublicSlug, { data: hostSettings }, { data: teamMembers }] = await Promise.all([
     ensureHostPublicSlug({
       db,
       hostName: user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? null,
@@ -20,49 +20,60 @@ export default async function SettingsPage() {
     }),
     db
       .from("host_settings")
-      .select("google_refresh_token, microsoft_refresh_token, google_calendar_ids, microsoft_calendar_ids, calendar_provider, host_name, public_slug, profile_photo_url, booking_base_url, weekly_availability, webhook_urls, zoom_refresh_token, sheet_refresh_token, sheet_id")
+      .select("host_name, public_slug, profile_photo_url, booking_base_url, booking_base_url_check_status")
       .limit(1)
       .maybeSingle(),
     db
       .from("team_members")
       .select("id, name, email, photo_url, is_active, google_refresh_token, microsoft_refresh_token, last_booking_at, created_at")
       .order("created_at", { ascending: true }),
-    getHostCalendarConnectionState(),
-    db.from("event_types").select("id", { count: "exact", head: true }).eq("is_active", true),
   ]);
 
-  const calendarConnected = Boolean(
-    hostSettings?.google_refresh_token || hostSettings?.microsoft_refresh_token
-  );
+  // Company domain suggestion
+  let companyDomainSuggestion: { domain: string; suggestedBy: string } | null = null;
+  const currentBookingUrl = (hostSettings as { booking_base_url?: string | null } | null)?.booking_base_url ?? null;
+  if (!currentBookingUrl && userEmailDomain && user?.id) {
+    const freeProviders = new Set(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "protonmail.com", "me.com"]);
+    if (!freeProviders.has(userEmailDomain)) {
+      try {
+        const { data: otherRows } = await db
+          .from("host_settings")
+          .select("booking_base_url, host_name, user_id")
+          .eq("booking_base_url_verified", true)
+          .neq("user_id", user.id)
+          .limit(5);
+
+        if (otherRows && otherRows.length > 0) {
+          const adminClient = createServerClient();
+          for (const row of otherRows as { booking_base_url?: string | null; host_name?: string | null; user_id?: string | null }[]) {
+            if (!row.user_id || !row.booking_base_url) continue;
+            const { data: { user: otherUser } } = await adminClient.auth.admin.getUserById(row.user_id);
+            const otherDomain = otherUser?.email?.split("@")[1]?.toLowerCase();
+            if (otherDomain === userEmailDomain) {
+              companyDomainSuggestion = {
+                domain: row.booking_base_url,
+                suggestedBy: row.host_name ?? otherUser?.email ?? "a colleague",
+              };
+              break;
+            }
+          }
+        }
+      } catch {
+        // Non-critical — skip silently
+      }
+    }
+  }
 
   return (
-    <div style={{ minHeight: "100vh" }}>
-      <DashboardNav
-        activeTab="settings"
-        activeLinks={activeLinksCount ?? 0}
-        email=""
-      />
-      <main
-        className="dashboard-main"
-        style={{
-          maxWidth: 1320,
-          margin: "0 auto",
-          padding: "var(--space-8) var(--space-6)",
-        }}
-      >
-        <Suspense>
+    <main className="dashboard-main">
+      <Suspense>
         <SettingsClient
           initial={{
             host_name: hostSettings?.host_name ?? null,
             public_slug: hostSettings?.public_slug ?? hostPublicSlug,
             profile_photo_url: hostSettings?.profile_photo_url ?? null,
             booking_base_url: hostSettings?.booking_base_url ?? null,
-            webhook_urls: hostSettings?.webhook_urls ?? [],
-            calendar_provider: hostSettings?.calendar_provider ?? null,
-            google_refresh_token: hostSettings?.google_refresh_token ?? null,
-            microsoft_refresh_token: hostSettings?.microsoft_refresh_token ?? null,
-            google_calendar_ids: hostSettings?.google_calendar_ids ?? [],
-            microsoft_calendar_ids: hostSettings?.microsoft_calendar_ids ?? [],
+            booking_base_url_check_status: (hostSettings as { booking_base_url_check_status?: string | null } | null)?.booking_base_url_check_status ?? null,
           }}
           account={{
             email: user?.email ?? "",
@@ -74,21 +85,9 @@ export default async function SettingsPage() {
           }}
           googleAvatarUrl={null}
           initialTeamMembers={teamMembers ?? []}
-          calendarConnected={calendarConnected}
-          calendarProvider={
-            hostSettings?.calendar_provider === "google" ||
-            hostSettings?.calendar_provider === "microsoft"
-              ? hostSettings.calendar_provider
-              : null
-          }
-          connectedCalendars={hostCalendarState.calendars}
-          selectedCalendarIds={hostCalendarState.selectedCalendarIds}
-          zoomConnected={Boolean((hostSettings as { zoom_refresh_token?: string | null } | null)?.zoom_refresh_token)}
-          sheetsConnected={Boolean((hostSettings as { sheet_refresh_token?: string | null } | null)?.sheet_refresh_token)}
-          initialSheetId={(hostSettings as { sheet_id?: string | null } | null)?.sheet_id ?? null}
+          companyDomainSuggestion={companyDomainSuggestion}
         />
-        </Suspense>
-      </main>
-    </div>
+      </Suspense>
+    </main>
   );
 }

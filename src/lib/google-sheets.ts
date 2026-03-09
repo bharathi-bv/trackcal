@@ -144,11 +144,18 @@ type BookingRecord = {
   utm_campaign: string | null;
   utm_term: string | null;
   utm_content: string | null;
+  parent_page_url: string | null;
+  parent_page_slug: string | null;
   gclid: string | null;
+  gbraid: string | null;
+  wbraid: string | null;
   fbclid: string | null;
+  fbc: string | null;
+  fbp: string | null;
   li_fat_id: string | null;
   ttclid: string | null;
   msclkid: string | null;
+  ga_linker: string | null;
   zoom_meeting_id: string | null;
   custom_answers: Record<string, string | string[]> | null;
 };
@@ -170,11 +177,18 @@ const COLUMN_DEFS: { header: string; value: (b: BookingRecord) => string }[] = [
   { header: "UTM Campaign", value: (b) => b.utm_campaign ?? "" },
   { header: "UTM Term",     value: (b) => b.utm_term ?? "" },
   { header: "UTM Content",  value: (b) => b.utm_content ?? "" },
+  { header: "Parent Page URL", value: (b) => b.parent_page_url ?? "" },
+  { header: "Parent Page Slug", value: (b) => b.parent_page_slug ?? "" },
   { header: "GCLID",        value: (b) => b.gclid ?? "" },
+  { header: "GBRAID",       value: (b) => b.gbraid ?? "" },
+  { header: "WBRAID",       value: (b) => b.wbraid ?? "" },
   { header: "FBCLID",       value: (b) => b.fbclid ?? "" },
+  { header: "FBC",          value: (b) => b.fbc ?? "" },
+  { header: "FBP",          value: (b) => b.fbp ?? "" },
   { header: "LI FAT ID",    value: (b) => b.li_fat_id ?? "" },
   { header: "TTCLID",       value: (b) => b.ttclid ?? "" },
   { header: "MSCLKID",      value: (b) => b.msclkid ?? "" },
+  { header: "GA Linker (_gl)", value: (b) => b.ga_linker ?? "" },
   { header: "Zoom Meeting ID", value: (b) => b.zoom_meeting_id ?? "" },
   { header: "Custom Answers",  value: (b) => b.custom_answers ? JSON.stringify(b.custom_answers) : "" },
 ];

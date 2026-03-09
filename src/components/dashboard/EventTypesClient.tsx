@@ -15,7 +15,11 @@ import {
 } from "@/lib/event-type-config";
 import AvailabilitySchedulesPanel from "@/components/dashboard/AvailabilitySchedulesPanel";
 import WeeklyAvailabilityEditor from "@/components/dashboard/WeeklyAvailabilityEditor";
-import { buildPublicBookingUrl } from "@/lib/public-booking-links";
+import {
+  buildPublicBookingPath,
+  buildPublicBookingUrl,
+  shouldUseBookPathPrefix,
+} from "@/lib/public-booking-links";
 import type {
   CollectiveSlotTier,
   TeamAvailabilityMember,
@@ -249,13 +253,35 @@ function normalizeUtmLinks(value: unknown): UtmLinkPreset[] {
   });
 }
 
+function normalizeEventTypeForClient(et: EventType): EventType {
+  const blockers = normalizeAvailabilityBlockers({
+    dates: et.blocked_dates,
+    weekdays: et.blocked_weekdays,
+  });
+  return {
+    ...et,
+    weekly_availability: et.weekly_availability
+      ? normalizeWeeklyAvailability(et.weekly_availability)
+      : null,
+    blocked_dates: blockers.dates,
+    blocked_weekdays: blockers.weekdays,
+    assigned_member_ids: Array.isArray(et.assigned_member_ids) ? et.assigned_member_ids : [],
+    collective_required_member_ids: Array.isArray(et.collective_required_member_ids)
+      ? et.collective_required_member_ids
+      : [],
+    team_scheduling_mode: et.team_scheduling_mode ?? "round_robin",
+    utm_links: normalizeUtmLinks(et.utm_links),
+    custom_questions: Array.isArray(et.custom_questions) ? et.custom_questions : [],
+  };
+}
+
 function buildUtmLink(
   baseUrl: string,
   hostPublicSlug: string,
   slug: string,
   preset: UtmLinkPreset
 ) {
-  const fallbackBase = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+  const fallbackBase = "https://citacal.com";
   const url = new URL(buildPublicBookingUrl(baseUrl || fallbackBase, hostPublicSlug, slug));
   UTM_FIELDS.forEach((field) => {
     const value = preset[field.key].trim();
@@ -297,6 +323,19 @@ function formatAvailabilityReason(reason: string | null) {
     default:
       return "Unknown";
   }
+}
+
+function toIsoDateLocal(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function toTwelveHourLabel(hours: number, minutes: number) {
+  const h12 = hours % 12 || 12;
+  const ap = hours < 12 ? "AM" : "PM";
+  return `${String(h12).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${ap}`;
 }
 
 // ── Question editor (used inside the Questions section) ────────────────────
@@ -569,19 +608,7 @@ export default function EventTypesClient({
 }) {
   const router = useRouter();
   const [eventTypes, setEventTypes] = useState<EventType[]>(() =>
-    initialEventTypes.map((et) => ({
-      ...et,
-      weekly_availability: et.weekly_availability ? normalizeWeeklyAvailability(et.weekly_availability) : null,
-      blocked_dates: normalizeAvailabilityBlockers({
-        dates: et.blocked_dates,
-        weekdays: et.blocked_weekdays,
-      }).dates,
-      blocked_weekdays: normalizeAvailabilityBlockers({
-        dates: et.blocked_dates,
-        weekdays: et.blocked_weekdays,
-      }).weekdays,
-      utm_links: normalizeUtmLinks(et.utm_links),
-    }))
+    initialEventTypes.map((et) => normalizeEventTypeForClient(et))
   );
   const [availabilitySchedules, setAvailabilitySchedules] = useState<AvailabilitySchedule[]>(
     initialAvailabilitySchedules
@@ -593,6 +620,7 @@ export default function EventTypesClient({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewDiagnostic, setPreviewDiagnostic] = useState<AvailabilityDiagnostic | null>(null);
   const [previewDiagnosticSlot, setPreviewDiagnosticSlot] = useState<string | null>(null);
+  const [previewUsesLocalSource, setPreviewUsesLocalSource] = useState(false);
   const [editing, setEditing] = useState<EventType | null>(null);
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [saving, setSaving] = useState(false);
@@ -600,7 +628,7 @@ export default function EventTypesClient({
   const [copied, setCopied] = useState<string | null>(null);
   const [copiedUtm, setCopiedUtm] = useState<string | null>(null);
   const [embedFor, setEmbedFor] = useState<EventType | null>(null);
-  const [embedCopied, setEmbedCopied] = useState<"script" | "iframe" | null>(null);
+  const [embedCopied, setEmbedCopied] = useState<"script" | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [viewMode, setViewMode] = useState<SchedulingView>("meeting_links");
@@ -624,9 +652,10 @@ export default function EventTypesClient({
     questions: null,
   });
 
-  const appUrl =
-    bookingBaseUrl.replace(/\/+$/, "") ||
-    (typeof window !== "undefined" ? window.location.origin : "");
+  const originFallback =
+    typeof window !== "undefined" ? window.location.origin : "https://citacal.com";
+  const appUrl = bookingBaseUrl.replace(/\/+$/, "") || originFallback;
+  const usesBookPrefix = shouldUseBookPathPrefix(appUrl);
   const defaultAvailabilityScheduleId =
     availabilitySchedules.find((schedule) => schedule.is_default)?.id ??
     availabilitySchedules[0]?.id ??
@@ -789,6 +818,91 @@ export default function EventTypesClient({
     }
   }
 
+  function computeLocalPreviewSlots(date: string) {
+    const schedule = availabilitySchedules.find((s) => s.id === form.availability_schedule_id) ?? null;
+    const weekly = form.use_custom_availability
+      ? form.weekly_availability
+      : schedule?.weekly_availability ?? DEFAULT_WEEKLY_AVAILABILITY;
+    const blockers = form.use_custom_availability
+      ? {
+          dates: form.blocked_dates,
+          weekdays: form.blocked_weekdays,
+        }
+      : schedule?.blockers ?? DEFAULT_AVAILABILITY_BLOCKERS;
+
+    const day = new Date(`${date}T00:00:00`);
+    const dayKey = String(day.getDay());
+    const dayConfig = weekly[dayKey];
+    if (!dayConfig?.enabled) {
+      return { all: [] as string[], available: [] as string[], reason: "day_disabled" as const };
+    }
+    if (blockers.dates.includes(date)) {
+      return { all: [] as string[], available: [] as string[], reason: "blocked_date" as const };
+    }
+    if (blockers.weekdays.includes(day.getDay())) {
+      return { all: [] as string[], available: [] as string[], reason: "blocked_weekday" as const };
+    }
+
+    const ranges =
+      Array.isArray(dayConfig.ranges) && dayConfig.ranges.length > 0
+        ? dayConfig.ranges
+        : [{ start_hour: dayConfig.start_hour, end_hour: dayConfig.end_hour }];
+
+    const allSet = new Set<string>();
+    const increment = form.slot_increment || 30;
+    for (const range of ranges) {
+      for (let h = range.start_hour; h < range.end_hour; h++) {
+        for (let m = 0; m < 60; m += increment) {
+          if (h * 60 + m + form.duration > range.end_hour * 60) break;
+          allSet.add(toTwelveHourLabel(h, m));
+        }
+      }
+    }
+    const all = Array.from(allSet);
+    if (all.length === 0) {
+      return { all: [], available: [], reason: "no_slots" as const };
+    }
+
+    const todayIso = toIsoDateLocal(new Date());
+    if (date < todayIso) {
+      return { all, available: [], reason: "past_date" as const };
+    }
+
+    if (form.booking_window_type === "fixed") {
+      if (
+        !form.booking_window_start_date ||
+        !form.booking_window_end_date ||
+        date < form.booking_window_start_date ||
+        date > form.booking_window_end_date
+      ) {
+        return { all, available: [], reason: "outside_booking_window" as const };
+      }
+    } else {
+      const maxDate = new Date();
+      maxDate.setHours(0, 0, 0, 0);
+      maxDate.setDate(maxDate.getDate() + form.max_days_in_advance);
+      if (new Date(`${date}T00:00:00`) > maxDate) {
+        return { all, available: [], reason: "outside_booking_window" as const };
+      }
+    }
+
+    return { all, available: all, reason: "available" as const };
+  }
+
+  async function reloadEventTypesFromServer() {
+    try {
+      const res = await fetch("/api/event-types", { cache: "no-store" });
+      if (!res.ok) return null;
+      const rows = (await res.json().catch(() => null)) as unknown;
+      if (!Array.isArray(rows)) return null;
+      const normalized = rows.map((row) => normalizeEventTypeForClient(row as EventType));
+      setEventTypes(normalized);
+      return normalized;
+    } catch {
+      return null;
+    }
+  }
+
   async function handleSave() {
     const errors: FormErrors = {};
 
@@ -854,41 +968,104 @@ export default function EventTypesClient({
     const url = editing ? `/api/event-types/${editing.id}` : "/api/event-types";
     const method = editing ? "PATCH" : "POST";
 
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await res.json();
+    let res: Response;
+    let data: unknown;
+    let rawText = "";
+    try {
+      res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      rawText = await res.text();
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = {};
+      }
+    } catch {
+      setFormErrors({ _general: "Failed to save. Check your connection and try again." });
+      setSaving(false);
+      return;
+    }
 
     if (!res.ok) {
-      setFormErrors({ _general: data.error || "Failed to save." });
+      const errorMessage =
+        data && typeof data === "object" && "error" in data && typeof data.error === "string"
+          ? data.error
+          : "Failed to save.";
+      setFormErrors({ _general: errorMessage });
       setSaving(false);
       return;
     }
 
     if (editing) {
-      // Optimistic update — no page reload needed for edits
+      // Existing link saved — update list in place, stay on the edit panel
       setEventTypes((prev) =>
         prev.map((e) =>
           e.id === editing.id ? ({ ...e, ...payload, id: editing.id } as EventType) : e
         )
       );
-      toast.success("Event type saved");
+      toast.success("Booking link saved");
+      setSaving(false);
+      // Stay open — do NOT close the panel
+      void reloadEventTypesFromServer();
+      router.refresh();
+      return;
     } else {
-      // New event — use server response if returned, otherwise refresh for the ID
-      if (data.data) {
-        setEventTypes((prev) => [...prev, data.data as EventType]);
-      } else {
-        router.refresh();
+      // New link created — add to list, make it visible in filters/tabs, and close panel
+      const payloadAssignedIds = Array.isArray(payload.assigned_member_ids)
+        ? payload.assigned_member_ids
+        : [];
+      let createdAssignedIds = payloadAssignedIds;
+      let createdId: string | null = null;
+      if (data && typeof data === "object" && "id" in data && typeof data.id === "string") {
+        const created = data as EventType;
+        createdId = created.id;
+        const normalizedAssignedIds = Array.isArray(created.assigned_member_ids)
+          ? created.assigned_member_ids
+          : [];
+        createdAssignedIds = normalizedAssignedIds;
+        setEventTypes((prev) => [
+          ...prev,
+          normalizeEventTypeForClient({
+            ...created,
+            assigned_member_ids: normalizedAssignedIds,
+          } as EventType),
+        ]);
       }
-      toast.success("Event type created");
+      if (!createdId) {
+        const contentType = res.headers.get("content-type") ?? "unknown";
+        const responseHint = rawText.trim().slice(0, 140);
+        setFormErrors({
+          _general:
+            `Create returned an unexpected response (status ${res.status}, content-type ${contentType}). ` +
+            `Please refresh and try again. ${responseHint ? `Response preview: ${responseHint}` : ""}`,
+        });
+        setSaving(false);
+        return;
+      }
+      setMeetingLinksTab(createdAssignedIds.length > 0 ? "team" : "personal");
+      setStatusFilter("all");
+      setQuery("");
+      const refreshed = await reloadEventTypesFromServer();
+      if (refreshed && !refreshed.some((et) => et.id === createdId)) {
+        setFormErrors({
+          _general:
+            "Create API returned success, but the new row is missing after refresh. " +
+            "This usually means the app and the Supabase project you are checking are different.",
+        });
+        setSaving(false);
+        return;
+      }
+      toast.success("Booking link created");
     }
 
     setSaving(false);
     setEditingFullPage(false);
     setEditing(null);
+    void reloadEventTypesFromServer();
+    router.refresh();
   }
 
   async function handleDelete(et: EventType) {
@@ -909,6 +1086,7 @@ export default function EventTypesClient({
       toast.error("Failed to delete. Try again.");
     } else {
       toast.success(`"${et.name}" deleted`);
+      router.refresh();
     }
   }
 
@@ -929,25 +1107,31 @@ export default function EventTypesClient({
     setPreviewSlots(null);
     setPreviewDiagnostic(null);
     setDiagnostic(null);
+    const shouldUseLocalPreview = !editing || (editing && slug !== editing.slug);
+    if (shouldUseLocalPreview) {
+      const local = computeLocalPreviewSlots(date);
+      setPreviewSlots({ available: local.available, all: local.all });
+      setPreviewUsesLocalSource(true);
+      setPreviewLoading(false);
+      return;
+    }
     try {
       const res = await fetch(`/api/availability?date=${encodeURIComponent(date)}&event=${encodeURIComponent(slug)}`);
       const data = await res.json();
       const available: string[] = Array.isArray(data.slots) ? data.slots : [];
-      const all: string[] = [];
-      const startH = form.start_hour;
-      const endH = form.end_hour;
-      const inc = form.slot_increment || 30;
-      for (let h = startH; h < endH; h++) {
-        for (let m = 0; m < 60; m += inc) {
-          if (h * 60 + m + form.duration > endH * 60) break;
-          const h12 = h % 12 || 12;
-          const ap = h < 12 ? "AM" : "PM";
-          all.push(`${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${ap}`);
-        }
+      const local = computeLocalPreviewSlots(date);
+      const all: string[] = local.all;
+      if (data?.reason === "event_not_found") {
+        setPreviewSlots({ available: local.available, all: local.all });
+        setPreviewUsesLocalSource(true);
+        return;
       }
       setPreviewSlots({ available, all });
+      setPreviewUsesLocalSource(false);
     } catch {
-      setPreviewSlots({ available: [], all: [] });
+      const local = computeLocalPreviewSlots(date);
+      setPreviewSlots({ available: local.available, all: local.all });
+      setPreviewUsesLocalSource(true);
     } finally {
       setPreviewLoading(false);
     }
@@ -956,6 +1140,24 @@ export default function EventTypesClient({
   async function fetchPreviewDiagnostic(date: string) {
     const slug = form.slug?.trim();
     if (!slug || !date) return;
+    if (previewUsesLocalSource) {
+      const local = computeLocalPreviewSlots(date);
+      const diag: AvailabilityDiagnostic = {
+        date,
+        slotCount: local.available.length,
+        reason: local.reason,
+        error: local.reason === "available" ? null : "Preview uses unsaved schedule settings.",
+        hostTimezone: null,
+        slotMeta: [],
+        selectedMembers: [],
+        availabilityTiersEnabled: false,
+        preferredMinimumHostCount: null,
+        fallbackMinimumHostCount: null,
+      };
+      setDiagnostic(diag);
+      setPreviewDiagnostic(diag);
+      return;
+    }
     setDiagnosticLoading(true);
     setDiagnostic(null);
     setPreviewDiagnostic(null);
@@ -1009,6 +1211,7 @@ export default function EventTypesClient({
       toast.error("Failed to update. Try again.");
     } else {
       toast.success(et.is_active ? "Deactivated" : "Activated");
+      router.refresh();
     }
   }
 
@@ -1135,20 +1338,15 @@ export default function EventTypesClient({
   function buildScriptEmbedCode(slug: string) {
     return [
       `<script async src="${appUrl}/citacal-embed.js" data-citacal-url="${appUrl}"></script>`,
-      `<div data-citacal-embed data-event="${slug}" data-height="760"></div>`,
+      `<div data-citacal-embed data-host="${hostPublicSlug}" data-event="${slug}" data-height="760"></div>`,
     ].join("\n");
   }
 
-  function buildIframeEmbedCode(slug: string) {
-    return `<iframe src="${appUrl}/embed?event=${slug}" style="width:100%;border:0;min-height:760px;border-radius:12px;" loading="lazy" title="CitaCal Booking"></iframe>`;
-  }
-
-  async function copyEmbed(kind: "script" | "iframe", slug: string) {
-    const code =
-      kind === "script" ? buildScriptEmbedCode(slug) : buildIframeEmbedCode(slug);
+  async function copyEmbed(kind: "script", slug: string) {
+    const code = buildScriptEmbedCode(slug);
     await navigator.clipboard.writeText(code);
     setEmbedCopied(kind);
-    toast.success(kind === "script" ? "Script embed code copied" : "Iframe code copied");
+    toast.success("Script embed code copied");
     setTimeout(() => setEmbedCopied(null), 1800);
   }
 
@@ -1279,32 +1477,45 @@ export default function EventTypesClient({
       <><div className="dashboard-page-header">
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: "var(--text-primary)", margin: 0, letterSpacing: "-0.02em" }}>
-            Scheduling
+            Booking Links
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-tertiary)", marginTop: "var(--space-1)", fontWeight: 500 }}>
-            Create meeting links and reusable availability schedules.
+            Create shareable booking links and reusable availability schedules.
           </p>
         </div>
         {viewMode === "meeting_links" && (
           <button className="tc-btn tc-btn--primary" onClick={openCreate}>
-            + New Meeting Link
+            + New Booking Link
           </button>
         )}
       </div>
 
-      <div className="tc-tabs-pill" style={{ marginBottom: "var(--space-4)" }}>
-        <button
-          className={`tc-tab-pill${viewMode === "meeting_links" ? " active" : ""}`}
-          onClick={() => setViewMode("meeting_links")}
-        >
-          Meeting Links
-        </button>
-        <button
-          className={`tc-tab-pill${viewMode === "availability" ? " active" : ""}`}
-          onClick={() => setViewMode("availability")}
-        >
-          Availability
-        </button>
+      <div style={{ display: "flex", borderBottom: "2px solid var(--border-default)", marginBottom: "var(--space-6)" }}>
+        {(["meeting_links", "availability"] as const).map((mode) => {
+          const label = mode === "meeting_links" ? "Booking Links" : "Availability";
+          const isActive = viewMode === mode;
+          return (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              style={{
+                padding: "var(--space-3) var(--space-5)",
+                fontSize: 13,
+                fontWeight: 600,
+                color: isActive ? "var(--blue-400)" : "var(--text-secondary)",
+                border: "none",
+                borderBottom: isActive ? "2px solid var(--blue-400)" : "2px solid transparent",
+                marginBottom: -2,
+                background: "none",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                fontFamily: "var(--font-sans)",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {viewMode === "availability" ? (
@@ -1378,10 +1589,10 @@ export default function EventTypesClient({
           }}
         >
           <p style={{ fontSize: 14, color: "var(--text-tertiary)", margin: 0 }}>
-            No event types yet. Create one to get a shareable booking link.
+            No booking links yet. Create one to get a shareable link.
           </p>
           <button className="tc-btn tc-btn--primary" onClick={openCreate}>
-            {eventTypes.length === 0 ? "Create your first event type" : "Create event type"}
+            {eventTypes.length === 0 ? "Create your first booking link" : "Create booking link"}
           </button>
         </div>
       ) : (
@@ -1432,21 +1643,25 @@ export default function EventTypesClient({
 
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-2)", flexWrap: "wrap" }}>
                     <code style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--surface-subtle)", padding: "2px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
-                      {`/${hostPublicSlug}/${et.slug}`}
+                      {buildPublicBookingPath(hostPublicSlug, et.slug, usesBookPrefix)}
                     </code>
-                    <button
+                    <a
+                      href={buildPublicBookingUrl(appUrl, hostPublicSlug, et.slug)}
+                      target="_blank"
+                      rel="noreferrer"
                       className="tc-btn tc-btn--ghost tc-btn--sm"
-                      style={{ fontSize: 11, padding: "2px 8px", height: "auto", color: copied === et.slug ? "var(--success)" : undefined }}
-                      onClick={() => copyLink(et.slug)}
+                      style={{ textDecoration: "none" }}
                     >
-                      {copied === et.slug ? "✓ Copied" : "Copy link"}
-                    </button>
-                    <a href={`/${hostPublicSlug}/${et.slug}`} target="_blank" rel="noreferrer" className="tc-btn tc-btn--ghost tc-btn--sm" style={{ fontSize: 11, padding: "2px 8px", height: "auto" }}>
-                      Open ↗
+                      Open
                     </a>
                     <button
+                      className={`tc-btn tc-btn--sm ${copied === et.slug ? "tc-btn--secondary" : "tc-btn--ghost"}`}
+                      onClick={() => copyLink(et.slug)}
+                    >
+                      {copied === et.slug ? "Copied!" : "Copy"}
+                    </button>
+                    <button
                       className="tc-btn tc-btn--ghost tc-btn--sm"
-                      style={{ fontSize: 11, padding: "2px 8px", height: "auto" }}
                       onClick={() => setEmbedFor(et)}
                     >
                       Embed
@@ -1772,11 +1987,11 @@ export default function EventTypesClient({
                 onClick={cancelEdit}
                 style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 500, color: "var(--color-text-muted)", display: "flex", alignItems: "center", gap: 6, padding: "4px 0", flexShrink: 0 }}
               >
-                ← Scheduling
+                ← Booking Links
               </button>
               <span style={{ color: "var(--color-text-disabled)", fontSize: 13 }}>/</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {editing ? (form.name || editing.name) : "New Meeting Link"}
+                {editing ? (form.name || editing.name) : "New Booking Link"}
               </span>
             </div>
             {/* Right: status toggle + actions */}
@@ -1857,7 +2072,9 @@ export default function EventTypesClient({
               <div className="tc-form-field">
                 <label className="tc-form-label">URL slug</label>
                 <input type="text" className="tc-input" placeholder="15-min-intro-call" value={form.slug} onChange={(e) => updateForm("slug", e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))} />
-                <span className="tc-form-hint">{`Booking URL: /${hostPublicSlug}/${form.slug || "your-slug"}`}</span>
+                <span className="tc-form-hint">
+                  {`Booking URL: ${buildPublicBookingPath(hostPublicSlug, form.slug || "your-slug", usesBookPrefix)}`}
+                </span>
               </div>
 
               <div className="tc-form-field">
@@ -2453,9 +2670,11 @@ export default function EventTypesClient({
               {/* Preview label + open link */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase", color: "var(--text-tertiary)" }}>Live Preview</span>
-                {form.slug && (
-                  <a href={`/${hostPublicSlug}/${form.slug}`} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--color-primary)", textDecoration: "none", fontWeight: 600 }}>Open ↗</a>
-                )}
+                {editing && form.slug ? (
+                  <a href={buildPublicBookingUrl(appUrl, hostPublicSlug, form.slug)} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--color-primary)", textDecoration: "none", fontWeight: 600 }}>Open ↗</a>
+                ) : !editing ? (
+                  <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600, cursor: "default" }}>Open ↗</span>
+                ) : null}
               </div>
 
               {/* Booking page card */}
@@ -2562,7 +2781,9 @@ export default function EventTypesClient({
                       </div>
                     )}
                     <p style={{ fontSize: 10, color: "var(--text-tertiary)", margin: "2px 0 0" }}>
-                      Grey slots unavailable — click any to diagnose.
+                      {previewUsesLocalSource
+                        ? "Preview shows current unsaved schedule. Save to include calendar-busy checks."
+                        : "Grey slots unavailable — click any to diagnose."}
                     </p>
                   </div>
                 )}
@@ -2671,7 +2892,7 @@ export default function EventTypesClient({
                   Embed {embedFor.name}
                 </h3>
                 <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--text-tertiary)" }}>
-                  Use script mode for auto-resize. Iframe mode is the simplest fallback.
+                  CitaCal supports JavaScript embed mode only.
                 </p>
               </div>
               <button className="tc-btn tc-btn--secondary tc-btn--sm" onClick={() => setEmbedFor(null)}>
@@ -2705,34 +2926,6 @@ export default function EventTypesClient({
                   }}
                 >
                   <code>{buildScriptEmbedCode(embedFor.slug)}</code>
-                </pre>
-              </div>
-
-              <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text-secondary)" }}>
-                    Direct Iframe
-                  </span>
-                  <button
-                    className="tc-btn tc-btn--ghost tc-btn--sm"
-                    onClick={() => copyEmbed("iframe", embedFor.slug)}
-                  >
-                    {embedCopied === "iframe" ? "✓ Copied" : "Copy code"}
-                  </button>
-                </div>
-                <pre
-                  style={{
-                    margin: 0,
-                    padding: "var(--space-3)",
-                    background: "var(--surface-subtle)",
-                    border: "1px solid var(--border-default)",
-                    borderRadius: "var(--radius-md)",
-                    fontSize: 12,
-                    overflowX: "auto",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  <code>{buildIframeEmbedCode(embedFor.slug)}</code>
                 </pre>
               </div>
             </div>

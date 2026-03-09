@@ -134,11 +134,18 @@ export async function POST(request: Request) {
       utm_campaign,
       utm_term,
       utm_content,
+      parent_page_url,
+      parent_page_slug,
       gclid,
+      gbraid,
+      wbraid,
       li_fat_id,
       fbclid,
+      fbc,
+      fbp,
       ttclid,
       msclkid,
+      ga_linker,
     } = body;
 
     if (!date || !time || !name || !email) {
@@ -163,6 +170,14 @@ export async function POST(request: Request) {
       typeof phone === "string" && phone.trim().length > 0 ? phone.trim().slice(0, 64) : null;
     const normalizedNotes =
       typeof notes === "string" && notes.trim().length > 0 ? notes.trim().slice(0, 2000) : null;
+    const normalizedParentPageUrl =
+      typeof parent_page_url === "string" && parent_page_url.trim().length > 0
+        ? parent_page_url.trim().slice(0, 2000)
+        : null;
+    const normalizedParentPageSlug =
+      typeof parent_page_slug === "string" && parent_page_slug.trim().length > 0
+        ? parent_page_slug.trim().slice(0, 140)
+        : null;
 
     const blockedDomains = getBlockedEmailDomains();
     const emailDomain = parseEmailDomain(normalizedEmail);
@@ -473,20 +488,51 @@ export async function POST(request: Request) {
       utm_campaign: utm_campaign || null,
       utm_term: utm_term || null,
       utm_content: utm_content || null,
+      parent_page_url: normalizedParentPageUrl,
+      parent_page_slug: normalizedParentPageSlug,
       gclid: gclid || null,
+      gbraid: gbraid || null,
+      wbraid: wbraid || null,
       li_fat_id: li_fat_id || null,
       fbclid: fbclid || null,
+      fbc: fbc || null,
+      fbp: fbp || null,
       ttclid: ttclid || null,
       msclkid: msclkid || null,
+      ga_linker: ga_linker || null,
       assigned_to: assignedMemberId,
       assigned_host_ids: assignedHostIds,
       zoom_meeting_id: zoomMeetingId,
     };
+    const bookingPayloadBaseLegacy: Record<string, unknown> = {
+      ...bookingPayloadBase,
+    };
+    delete bookingPayloadBaseLegacy.gbraid;
+    delete bookingPayloadBaseLegacy.wbraid;
+    delete bookingPayloadBaseLegacy.fbc;
+    delete bookingPayloadBaseLegacy.fbp;
+    delete bookingPayloadBaseLegacy.ga_linker;
+    delete bookingPayloadBaseLegacy.parent_page_url;
+    delete bookingPayloadBaseLegacy.parent_page_slug;
     const bookingPayloadWithTelemetry = {
       ...bookingPayloadBase,
       source_ip: sourceIp,
       user_agent: userAgent,
     };
+    const isCompatColumnError = (value: { code?: string | null; message?: string | null } | null) =>
+      Boolean(
+        value &&
+          (value.code === "42703" ||
+            value.message?.includes("source_ip") ||
+            value.message?.includes("user_agent") ||
+            value.message?.includes("gbraid") ||
+            value.message?.includes("wbraid") ||
+            value.message?.includes("fbc") ||
+            value.message?.includes("fbp") ||
+            value.message?.includes("ga_linker") ||
+            value.message?.includes("parent_page_url") ||
+            value.message?.includes("parent_page_slug"))
+      );
 
     let { data, error } = await db
       .from("bookings")
@@ -494,12 +540,7 @@ export async function POST(request: Request) {
       .select("id")
       .single();
 
-    if (
-      error &&
-      (error.code === "42703" ||
-        error.message.includes("source_ip") ||
-        error.message.includes("user_agent"))
-    ) {
+    if (error && isCompatColumnError(error)) {
       const retryWithoutTelemetry = await db
         .from("bookings")
         .insert(bookingPayloadBase)
@@ -507,6 +548,16 @@ export async function POST(request: Request) {
         .single();
       data = retryWithoutTelemetry.data;
       error = retryWithoutTelemetry.error;
+
+      if (error && isCompatColumnError(error)) {
+        const retryLegacy = await db
+          .from("bookings")
+          .insert(bookingPayloadBaseLegacy)
+          .select("id")
+          .single();
+        data = retryLegacy.data;
+        error = retryLegacy.error;
+      }
     }
 
     // Race condition retry: another request just took this member+slot.
@@ -531,12 +582,7 @@ export async function POST(request: Request) {
       assignedHostIds = [];
       assignedHosts = null;
 
-      if (
-        error &&
-        (error.code === "42703" ||
-          error.message.includes("source_ip") ||
-          error.message.includes("user_agent"))
-      ) {
+      if (error && isCompatColumnError(error)) {
         const retryNoTelemetry = await db
           .from("bookings")
           .insert({ ...bookingPayloadBase, assigned_to: null, assigned_host_ids: [] })
@@ -544,7 +590,18 @@ export async function POST(request: Request) {
           .single();
         data = retryNoTelemetry.data;
         error = retryNoTelemetry.error;
+
+        if (error && isCompatColumnError(error)) {
+          const retryLegacy = await db
+            .from("bookings")
+            .insert({ ...bookingPayloadBaseLegacy, assigned_to: null, assigned_host_ids: [] })
+            .select("id")
+            .single();
+          data = retryLegacy.data;
+          error = retryLegacy.error;
+        }
       }
+
     }
 
     if (error) {
@@ -614,6 +671,7 @@ export async function POST(request: Request) {
     };
     let calendarEventId: string | null = null;
     const calendarEvents: Array<{ member_id: string; calendar_event_id: string }> = [];
+    let inviteSent = false;
     try {
       if (assignedHosts && assignedHosts.length > 0) {
         const eventResults = await Promise.allSettled(
@@ -638,6 +696,7 @@ export async function POST(request: Request) {
       }
 
       if (calendarEventId || calendarEvents.length > 0) {
+        inviteSent = true;
         const { error: calendarIdUpdateError } = await db
           .from("bookings")
           .update({
@@ -701,11 +760,18 @@ export async function POST(request: Request) {
         utm_campaign: typeof utm_campaign === "string" ? utm_campaign : null,
         utm_term: typeof utm_term === "string" ? utm_term : null,
         utm_content: typeof utm_content === "string" ? utm_content : null,
+        parent_page_url: normalizedParentPageUrl,
+        parent_page_slug: normalizedParentPageSlug,
         gclid: typeof gclid === "string" ? gclid : null,
+        gbraid: typeof gbraid === "string" ? gbraid : null,
+        wbraid: typeof wbraid === "string" ? wbraid : null,
         fbclid: typeof fbclid === "string" ? fbclid : null,
+        fbc: typeof fbc === "string" ? fbc : null,
+        fbp: typeof fbp === "string" ? fbp : null,
         li_fat_id: typeof li_fat_id === "string" ? li_fat_id : null,
         ttclid: typeof ttclid === "string" ? ttclid : null,
         msclkid: typeof msclkid === "string" ? msclkid : null,
+        ga_linker: typeof ga_linker === "string" ? ga_linker : null,
       },
     });
     stageMs.side_effects = Date.now() - startedAt;
@@ -716,6 +782,7 @@ export async function POST(request: Request) {
         assigned_member: assignedMember,
         assigned_hosts: assignedHostsResponse,
         manage_url: manageUrl,
+        invite_sent: inviteSent,
       },
       201,
       {

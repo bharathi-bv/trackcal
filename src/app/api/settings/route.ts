@@ -13,6 +13,8 @@ import {
   isHostPublicSlugAvailable,
   slugifyPublicSegment,
 } from "@/lib/public-booking-links";
+import { normalizeTrackingEventAliases } from "@/lib/tracking-events";
+import { addDomainToVercel, removeDomainFromVercel } from "@/lib/vercel-domains";
 
 const settingsSchema = z.object({
   host_name: z.string().trim().max(120).optional().nullable(),
@@ -22,6 +24,11 @@ const settingsSchema = z.object({
   booking_base_url: z.string().trim().url().optional().or(z.literal("")).nullable(),
   weekly_availability: z.record(z.string(), z.any()).optional().nullable(),
   webhook_urls: z.array(z.string().url()).optional().nullable(),
+  booking_link_header_code: z.string().max(200000).optional().or(z.literal("")).nullable(),
+  booking_link_footer_code: z.string().max(200000).optional().or(z.literal("")).nullable(),
+  booking_link_script_urls: z.array(z.string().trim().url().max(2048)).optional().nullable(),
+  event_aliases: z.record(z.string(), z.string()).optional().nullable(),
+  embed_send_pageview: z.boolean().optional(),
   google_analytics_id: z.string().trim().max(64).optional().nullable(),
   google_tag_manager_id: z.string().trim().max(64).optional().nullable(),
   meta_pixel_id: z.string().trim().max(64).optional().nullable(),
@@ -62,6 +69,17 @@ function normalizeNumericAnalyticsId(value: string | null | undefined) {
   return /^\d+$/.test(normalized) ? normalized : null;
 }
 
+function normalizeScriptUrls(values: string[] | null | undefined) {
+  if (!values) return [] as string[];
+  const deduped = new Set<string>();
+  for (const raw of values) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    deduped.add(trimmed);
+  }
+  return Array.from(deduped);
+}
+
 export async function GET() {
   const { unauthorized } = await requireApiUser();
   if (unauthorized) return unauthorized;
@@ -69,7 +87,7 @@ export async function GET() {
   const db = createServerClient();
   const { data } = await db
     .from("host_settings")
-    .select("host_name, public_slug, profile_photo_url, booking_base_url, weekly_availability, webhook_urls, google_analytics_id, google_tag_manager_id, meta_pixel_id, linkedin_partner_id, calendar_provider, google_calendar_ids, microsoft_calendar_ids, zoom_refresh_token, sheet_refresh_token, sheet_id")
+    .select("host_name, public_slug, profile_photo_url, booking_base_url, booking_base_url_verified, booking_base_url_verified_at, booking_base_url_last_checked_at, booking_base_url_check_status, booking_base_url_check_error, weekly_availability, webhook_urls, booking_link_header_code, booking_link_footer_code, booking_link_script_urls, event_aliases, embed_send_pageview, google_analytics_id, google_tag_manager_id, meta_pixel_id, linkedin_partner_id, calendar_provider, google_calendar_ids, microsoft_calendar_ids, zoom_refresh_token, sheet_refresh_token, sheet_id")
     .limit(1)
     .maybeSingle();
 
@@ -83,8 +101,18 @@ export async function GET() {
           public_slug: settings.public_slug,
           profile_photo_url: settings.profile_photo_url,
           booking_base_url: settings.booking_base_url,
+          booking_base_url_verified: Boolean(settings.booking_base_url_verified),
+          booking_base_url_verified_at: settings.booking_base_url_verified_at ?? null,
+          booking_base_url_last_checked_at: settings.booking_base_url_last_checked_at ?? null,
+          booking_base_url_check_status: settings.booking_base_url_check_status ?? "unchecked",
+          booking_base_url_check_error: settings.booking_base_url_check_error ?? null,
           weekly_availability: settings.weekly_availability,
           webhook_urls: settings.webhook_urls,
+          booking_link_header_code: settings.booking_link_header_code ?? "",
+          booking_link_footer_code: settings.booking_link_footer_code ?? "",
+          booking_link_script_urls: settings.booking_link_script_urls ?? [],
+          event_aliases: normalizeTrackingEventAliases(settings.event_aliases ?? {}),
+          embed_send_pageview: Boolean(settings.embed_send_pageview),
           google_analytics_id: settings.google_analytics_id,
           google_tag_manager_id: settings.google_tag_manager_id,
           meta_pixel_id: settings.meta_pixel_id,
@@ -101,8 +129,18 @@ export async function GET() {
           public_slug: null,
           profile_photo_url: null,
           booking_base_url: null,
+          booking_base_url_verified: false,
+          booking_base_url_verified_at: null,
+          booking_base_url_last_checked_at: null,
+          booking_base_url_check_status: "unchecked",
+          booking_base_url_check_error: null,
           weekly_availability: null,
           webhook_urls: [],
+          booking_link_header_code: "",
+          booking_link_footer_code: "",
+          booking_link_script_urls: [],
+          event_aliases: {},
+          embed_send_pageview: false,
           google_analytics_id: null,
           google_tag_manager_id: null,
           meta_pixel_id: null,
@@ -119,7 +157,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { unauthorized } = await requireApiUser();
+    const { user, unauthorized } = await requireApiUser();
     if (unauthorized) return unauthorized;
 
     const parsed = settingsSchema.safeParse(await request.json());
@@ -138,6 +176,23 @@ export async function PUT(request: NextRequest) {
     const booking_base_url = normalizeBookingBaseUrl(parsed.data.booking_base_url);
     const weekly_availability = parsed.data.weekly_availability ?? undefined;
     const webhook_urls = parsed.data.webhook_urls ?? undefined;
+    const booking_link_header_code =
+      parsed.data.booking_link_header_code === undefined
+        ? undefined
+        : (parsed.data.booking_link_header_code ?? "");
+    const booking_link_footer_code =
+      parsed.data.booking_link_footer_code === undefined
+        ? undefined
+        : (parsed.data.booking_link_footer_code ?? "");
+    const booking_link_script_urls =
+      parsed.data.booking_link_script_urls === undefined
+        ? undefined
+        : normalizeScriptUrls(parsed.data.booking_link_script_urls);
+    const event_aliases =
+      parsed.data.event_aliases === undefined
+        ? undefined
+        : normalizeTrackingEventAliases(parsed.data.event_aliases);
+    const embed_send_pageview = parsed.data.embed_send_pageview;
     const google_analytics_id =
       parsed.data.google_analytics_id === undefined
         ? undefined
@@ -160,13 +215,14 @@ export async function PUT(request: NextRequest) {
     // Check if a row already exists
     const { data: existing } = await db
       .from("host_settings")
-      .select("id")
+      .select("id, booking_base_url")
       .limit(1)
       .maybeSingle();
 
     const payload: Record<string, unknown> = {
       host_name: host_name || null,
       profile_photo_url: profile_photo_url || null,
+      user_id: user!.id,
     };
     if (parsed.data.public_slug !== undefined) {
       if (!public_slug) {
@@ -181,8 +237,29 @@ export async function PUT(request: NextRequest) {
       }
       payload.public_slug = public_slug;
     }
+    let vercelDnsInfo: { recordType?: string; dnsTarget?: string } = {};
     if (parsed.data.booking_base_url !== undefined) {
       payload.booking_base_url = booking_base_url;
+      const existingBaseUrl = normalizeBookingBaseUrl((existing as { booking_base_url?: string | null } | null)?.booking_base_url);
+      if (existingBaseUrl !== booking_base_url) {
+        payload.booking_base_url_verified = false;
+        payload.booking_base_url_verified_at = null;
+        payload.booking_base_url_last_checked_at = null;
+        payload.booking_base_url_check_status = "unchecked";
+        payload.booking_base_url_check_error = null;
+
+        // Register / deregister the domain on Vercel automatically
+        if (booking_base_url) {
+          const hostname = new URL(booking_base_url).hostname;
+          const result = await addDomainToVercel(hostname);
+          if (result.ok) {
+            vercelDnsInfo = { recordType: result.recordType, dnsTarget: result.dnsTarget };
+          }
+        } else if (existingBaseUrl) {
+          const hostname = new URL(existingBaseUrl).hostname;
+          await removeDomainFromVercel(hostname);
+        }
+      }
     }
     // Only include weekly_availability in the update if it was explicitly sent
     if (weekly_availability !== undefined) {
@@ -190,6 +267,21 @@ export async function PUT(request: NextRequest) {
     }
     if (webhook_urls !== undefined) {
       payload.webhook_urls = webhook_urls ?? [];
+    }
+    if (booking_link_header_code !== undefined) {
+      payload.booking_link_header_code = booking_link_header_code;
+    }
+    if (booking_link_footer_code !== undefined) {
+      payload.booking_link_footer_code = booking_link_footer_code;
+    }
+    if (booking_link_script_urls !== undefined) {
+      payload.booking_link_script_urls = booking_link_script_urls;
+    }
+    if (event_aliases !== undefined) {
+      payload.event_aliases = event_aliases;
+    }
+    if (embed_send_pageview !== undefined) {
+      payload.embed_send_pageview = Boolean(embed_send_pageview);
     }
     if (parsed.data.google_analytics_id !== undefined) {
       if (parsed.data.google_analytics_id && !google_analytics_id) {
@@ -283,7 +375,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, ...vercelDnsInfo });
   } catch (err) {
     console.error("[settings] PUT error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

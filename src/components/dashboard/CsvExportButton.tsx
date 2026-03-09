@@ -9,11 +9,18 @@ type BookingRow = {
   utm_source: string | null;
   utm_campaign: string | null;
   utm_medium: string | null;
+  parent_page_url: string | null;
+  parent_page_slug: string | null;
   gclid: string | null;
+  gbraid: string | null;
+  wbraid: string | null;
   fbclid: string | null;
+  fbc: string | null;
+  fbp: string | null;
   li_fat_id: string | null;
   ttclid: string | null;
   msclkid: string | null;
+  ga_linker: string | null;
   status: string;
   created_at: string;
 };
@@ -23,7 +30,10 @@ export default function CsvExportButton({ bookings }: { bookings: BookingRow[] }
     const headers = [
       "Date", "Time", "Name", "Email", "Phone",
       "Source", "Campaign", "Medium",
-      "gclid", "fbclid", "li_fat_id", "ttclid", "msclkid",
+      "parent_page_url", "parent_page_slug",
+      "gclid", "gbraid", "wbraid",
+      "fbclid", "fbc", "fbp",
+      "li_fat_id", "ttclid", "msclkid", "ga_linker",
       "Status", "Booked At",
     ];
 
@@ -36,11 +46,18 @@ export default function CsvExportButton({ bookings }: { bookings: BookingRow[] }
       b.utm_source ?? "",
       b.utm_campaign ?? "",
       b.utm_medium ?? "",
+      b.parent_page_url ?? "",
+      b.parent_page_slug ?? "",
       b.gclid ?? "",
+      b.gbraid ?? "",
+      b.wbraid ?? "",
       b.fbclid ?? "",
+      b.fbc ?? "",
+      b.fbp ?? "",
       b.li_fat_id ?? "",
       b.ttclid ?? "",
       b.msclkid ?? "",
+      b.ga_linker ?? "",
       b.status,
       b.created_at,
     ]);

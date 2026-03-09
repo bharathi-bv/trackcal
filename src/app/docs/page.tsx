@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 /* ─── Types ─────────────────────────────────────────────────── */
 type Section = { id: string; label: string; articles: Article[] };
@@ -32,6 +33,16 @@ const Note = ({ children, type = "info" }: { children: React.ReactNode; type?: "
 };
 const Code = ({ children }: { children: React.ReactNode }) => (
   <code style={{ background: "rgba(123,108,246,0.08)", color: "#7B6CF6", padding: "1px 6px", borderRadius: 5, fontSize: 12, fontFamily: "monospace" }}>{children}</code>
+);
+const ExternalLink = ({ href, children }: { href: string; children: React.ReactNode }) => (
+  <a
+    href={href}
+    target="_blank"
+    rel="noreferrer noopener"
+    style={{ color: "#7B6CF6", textDecoration: "none", fontWeight: 600 }}
+  >
+    {children}
+  </a>
 );
 const CodeBlock = ({ children, label }: { children: string; label?: string }) => (
   <div style={{ borderRadius: 10, overflow: "hidden", marginBottom: 16, border: "1px solid rgba(200,198,230,0.4)" }}>
@@ -76,7 +87,7 @@ const QuickStartContent = () => (
       { title: "Connect your calendar", body: "In Settings → Profile & Availability, click 'Connect Google'. Approve the calendar permission. CitaCal will now check your real availability and write confirmed bookings to your calendar." },
       { title: "Set your working hours", body: "Still in Settings, use the 7-day availability editor to set the days and hours you want to accept meetings. This is your global default." },
       { title: "Create a meeting link", body: "Go to Scheduling → click '+ New Page'. Name it (e.g. '30-min Demo'), choose a duration, and save. Your booking link is immediately live." },
-      { title: "Share it with UTMs attached", body: <>Your link looks like <Code>citacal.com/your-name/demo-30min</Code>. When sharing from ads, append UTMs after the path: <Code>?utm_source=linkedin&amp;utm_campaign=q1</Code>. CitaCal captures them automatically.</> },
+      { title: "Share it with UTMs attached", body: <>Your default link looks like <Code>citacal.com/book/your-name/demo-30min</Code>. If you use a custom booking subdomain, it can be <Code>book.yourdomain.com/your-name/demo-30min</Code>. When sharing from ads, append UTMs after the path: <Code>?utm_source=linkedin&amp;utm_campaign=q1</Code>. CitaCal captures them automatically.</> },
     ]} />
     <Note type="tip">If you run paid ads, CitaCal&apos;s entire value is in those UTM parameters. Always append them — and your ad platform&apos;s click IDs too (e.g. <Code>&amp;gclid=&#123;gclid&#125;</Code> for Google Ads, <Code>&amp;li_fat_id=&#123;li_fat_id&#125;</Code> for LinkedIn).</Note>
   </>
@@ -117,7 +128,7 @@ const CreateMeetingLinkContent = () => (
     <Steps steps={[
       { title: "Go to Scheduling in the top nav", body: "This is your meeting link library." },
       { title: "Click '+ New Page'", body: "A drawer opens on the right with all settings." },
-      { title: "Set the name and slug", body: <>The slug appears after your public username, like <Code>/your-name/your-slug</Code>. Keep it lowercase and short, like <Code>demo-30min</Code> or <Code>intro-call</Code>.</> },
+      { title: "Set the name and slug", body: <>The slug appears after your public username, like <Code>/book/your-name/your-slug</Code> on citacal.com (or <Code>/your-name/your-slug</Code> on a custom booking subdomain). Keep it lowercase and short, like <Code>demo-30min</Code> or <Code>intro-call</Code>.</> },
       { title: "Choose duration and slot frequency", body: "Duration is how long the meeting is. Slot increment controls how often slots appear — e.g. slots every 30 minutes starting from 9:00 AM." },
       { title: "Save and copy the link", body: "The link is live immediately. Copy it and add UTM parameters before sharing." },
     ]} />
@@ -204,7 +215,7 @@ ttclid          — TikTok Ads click ID
 msclkid         — Microsoft / Bing Ads click ID`}</CodeBlock>
     <H3>Make sure your ad links pass these through</H3>
     <Steps steps={[
-      { title: "Add UTM parameters to your booking link in your ad platform", body: <>Use your platform&apos;s URL builder. Result: <Code>citacal.com/your-name/demo?utm_source=linkedin&amp;utm_medium=paid&amp;utm_campaign=q1-demo</Code></> },
+      { title: "Add UTM parameters to your booking link in your ad platform", body: <>Use your platform&apos;s URL builder. Result: <Code>citacal.com/book/your-name/demo?utm_source=linkedin&amp;utm_medium=paid&amp;utm_campaign=q1-demo</Code></> },
       { title: "Enable auto-tagging for click IDs", body: "For Google Ads, enable auto-tagging in account settings. For LinkedIn, enable the LinkedIn Insight Tag. For Meta, enable auto advanced matching." },
       { title: "Insert the click ID parameter dynamically", body: <>Add the platform&apos;s macro to your URL. Google: <Code>&amp;gclid=&#123;gclid&#125;</Code>. LinkedIn: <Code>&amp;li_fat_id=&#123;li_fat_id&#125;</Code>. Meta: <Code>&amp;fbclid=&#123;fbclid&#125;</Code>.</> },
       { title: "Check your Attribution Coverage in Analytics", body: "The Analytics dashboard shows an 'Attribution Coverage %' KPI — what % of bookings have a known source. Aim for 90%+." },
@@ -243,6 +254,124 @@ const ReadAnalyticsContent = () => (
     <P>Click &quot;Export CSV&quot; to download all bookings matching your current filter. The CSV includes every field: date, time, attendee name and email, phone, notes, all 10 attribution fields, status, and assigned team member. Bring this into Sheets, Looker Studio, or your data warehouse.</P>
     <H3>Understand the source breakdown chart</H3>
     <P>The horizontal bar chart below the KPIs shows booking volume by <Code>utm_source</Code>, ranked highest to lowest. It&apos;s a quick gut-check — if LinkedIn drives 80% of demos but only 20% of your ad spend, that&apos;s your signal.</P>
+  </>
+);
+
+const TrackingDeepDiveIntroContent = () => (
+  <>
+    <H2>Tracking deep dive: architecture and decisions</H2>
+    <P>
+      This section is a deeper tracking reference for operators and implementers. It explains what CitaCal captures, why it captures it, and how to avoid attribution loss in embedded or cross-domain flows.
+    </P>
+    <H3>CitaCal attribution model</H3>
+    <Ul items={[
+      "Capture UTM and click IDs at first page load",
+      "Persist attribution context in browser storage for returning visitors",
+      "Attach attribution fields to booking POST payload",
+      "Persist to bookings table and fan out through webhook + exports",
+    ]} />
+    <CodeBlock label="Canonical fields">{`utm_source, utm_medium, utm_campaign, utm_term, utm_content
+gclid, gbraid, wbraid
+fbclid, fbc, fbp
+li_fat_id, ttclid, msclkid
+ga_linker (_gl)`}</CodeBlock>
+    <H3>Embed vs direct link</H3>
+    <P>Direct booking links are the most reliable option for attribution continuity. If embedding is required, use CitaCal JS embed so parent URL params are forwarded into the booking flow. Avoid static iframe-only setups for paid traffic funnels.</P>
+    <Note type="tip">
+      Benchmark precision reference (Calendly docs):
+      {" "}
+      <ExternalLink href="https://help.calendly.com/hc/en-us/articles/223195428-Tracking-and-reporting#h_01JRTMM9G16GMGQ7MKPZ14Z6B0">Tracking and reporting</ExternalLink>,
+      {" "}
+      <ExternalLink href="https://help.calendly.com/hc/en-us/articles/360001575393-Calendly-Google-Analytics#h_01JXFTB6XPHVWM71VEV61D2HV5">Google Analytics setup</ExternalLink>,
+      {" "}
+      <ExternalLink href="https://help.calendly.com/hc/en-us/articles/4412934840087-How-to-track-embed-activity-in-Google-Analytics#h_01JSCSSDMC8RN78WQFTXYW0VT5">Embed activity in GA</ExternalLink>.
+    </Note>
+  </>
+);
+
+const TrackingGa4GoogleContent = () => (
+  <>
+    <H2>Tracking deep dive: GA4 and Google Ads</H2>
+    <P>Google reporting quality depends on two layers working together: GA4 session continuity and Google click ID continuity.</P>
+    <H3>GA4 setup checklist</H3>
+    <Steps steps={[
+      { title: "Set GA4 ID (or GTM container)", body: "Configure in Integrations so booking pages load your analytics tags." },
+      { title: "If cross-domain, validate linker continuity", body: <>Confirm <Code>_gl</Code> is preserved when users move into booking pages.</> },
+      { title: "Verify conversion events", body: <>Check <Code>booking_pageview</Code> and <Code>booking_conversion</Code> in GA debug streams.</> },
+    ]} />
+    <H3>Google Ads setup checklist</H3>
+    <Steps steps={[
+      { title: "Enable auto-tagging", body: "Google Ads must append click identifiers automatically." },
+      { title: "Keep URL templates consistent", body: <>Use UTMs + preserve <Code>gclid</Code>/<Code>gbraid</Code>/<Code>wbraid</Code>.</> },
+      { title: "Map webhook fields downstream", body: <>Map <Code>click_ids.gclid</Code>, <Code>click_ids.gbraid</Code>, <Code>click_ids.wbraid</Code> in CRM/import pipelines.</> },
+    ]} />
+    <H3>What “healthy” looks like</H3>
+    <Ul items={[
+      "UTM coverage trending high for paid traffic",
+      "Google click IDs visible in recent booking rows",
+      "No sudden drop after landing page, redirect, or embed implementation changes",
+    ]} />
+    <P>
+      Reference setup guide:
+      {" "}
+      <ExternalLink href="https://help.calendly.com/hc/en-us/articles/360001575393-Calendly-Google-Analytics#h_01JXFSJ9BMVRE73XTKG1SFHAER">
+        Calendly GA reference
+      </ExternalLink>.
+    </P>
+  </>
+);
+
+const TrackingPaidSocialContent = () => (
+  <>
+    <H2>Tracking deep dive: Meta, LinkedIn, Microsoft, TikTok</H2>
+    <P>For paid social and non-Google paid channels, robust tracking usually requires both browser signals and server-side mappings.</P>
+    <H3>Meta (Facebook/Instagram)</H3>
+    <Ul items={[
+      "Set Meta Pixel ID in Integrations",
+      "Capture fbclid and preserve fbc/fbp identifiers",
+      "Map webhook payload to CAPI with dedup strategy",
+    ]} />
+    <H3>LinkedIn Ads</H3>
+    <Ul items={[
+      "Set LinkedIn Partner ID in Integrations",
+      "Ensure destination template appends li_fat_id",
+      "Map click_ids.li_fat_id to CRM fields used in attribution reporting",
+    ]} />
+    <H3>Microsoft Ads and TikTok</H3>
+    <Ul items={[
+      "Preserve msclkid / ttclid in URL templates",
+      "Pass consistent UTMs for reporting joins",
+      "Store click IDs in CRM and conversion import workflows",
+    ]} />
+    <Note type="warning">If IDs are present on ad clicks but missing on bookings, first inspect redirects, link shorteners, and embed transport implementation.</Note>
+  </>
+);
+
+const TrackingQaContent = () => (
+  <>
+    <H2>Tracking deep dive: QA and troubleshooting playbook</H2>
+    <P>Use this when attribution quality drops or before launching paid campaigns.</P>
+    <H3>Pre-launch QA run</H3>
+    <Steps steps={[
+      { title: "Build one test link per channel", body: "Use real ad-preview links so templates/macros are applied." },
+      { title: "Complete one booking per test link", body: "Run full flow from click to booking confirmation." },
+      { title: "Validate in Analytics", body: <>Confirm expected <Code>utm_source</Code> + channel click IDs in recent bookings.</> },
+      { title: "Validate webhook payload", body: <>Confirm <Code>utm.*</Code> and <Code>click_ids.*</Code> values arrive downstream.</> },
+    ]} />
+    <H3>Root cause checklist for missing attribution</H3>
+    <Ul items={[
+      "Auto-tagging disabled in ad platform",
+      "URL template missing click ID parameter",
+      "Redirect chain stripping query params",
+      "Static iframe used instead of JS embed",
+      "CRM mapping overwriting IDs with null values",
+    ]} />
+    <H3>Reference docs for expected behavior</H3>
+    <Ul items={[
+      "Calendly tracking/reporting: https://help.calendly.com/hc/en-us/articles/223195428-Tracking-and-reporting#h_01JRTMM9G16GMGQ7MKPZ14Z6B0",
+      "Calendly GA setup: https://help.calendly.com/hc/en-us/articles/360001575393-Calendly-Google-Analytics#h_01JXFTB6XPHVWM71VEV61D2HV5",
+      "Calendly embed activity tracking: https://help.calendly.com/hc/en-us/articles/4412934840087-How-to-track-embed-activity-in-Google-Analytics#h_01JSCSSDMC8RN78WQFTXYW0VT5",
+    ]} />
   </>
 );
 
@@ -370,23 +499,15 @@ const RescheduleContent = () => (
 const EmbedContent = () => (
   <>
     <H2>Embed the booking widget on your website</H2>
-    <P>You can embed the booking page inside an iframe on any website. CitaCal provides a clean <Code>/embed</Code> route without the top nav.</P>
-    <H3>Add the iframe to your page</H3>
-    <CodeBlock label="HTML">{`<iframe
-  src="https://citacal.com/embed?event=demo-30min"
-  width="100%"
-  height="720"
-  frameborder="0"
-  allow="clipboard-write"
-></iframe>`}</CodeBlock>
-    <H3>Pass UTMs through the embed</H3>
-    <P>If your landing page URL has UTM parameters, you need to pass them into the iframe src. A static iframe src can&apos;t read your page&apos;s URL. Use this JavaScript snippet:</P>
-    <CodeBlock label="JavaScript — inject UTMs from page URL into iframe">{`const params = new URLSearchParams(window.location.search);
-const baseUrl = 'https://citacal.com/embed?event=demo-30min';
-document.getElementById('citacal-frame').src = baseUrl + '&' + params.toString();`}</CodeBlock>
-    <Note type="warning">A static iframe src won&apos;t capture your landing page&apos;s UTMs because browsers block cross-origin localStorage access. Always use the JS injection method above if attribution accuracy matters.</Note>
+    <P>CitaCal supports JavaScript embed mode. This mode forwards UTMs/click IDs from your landing page and supports auto-resize.</P>
+    <H3>Add the JavaScript embed snippet</H3>
+    <CodeBlock label="HTML">{`<script async src="https://citacal.com/citacal-embed.js" data-citacal-url="https://citacal.com"></script>
+<div data-citacal-embed data-host="your-name" data-event="demo-30min" data-height="760"></div>`}</CodeBlock>
+    <H3>If you use a custom booking subdomain</H3>
+    <P>Replace <Code>data-citacal-url</Code> with your booking base URL, for example <Code>https://book.yourdomain.com</Code>.</P>
+    <Note type="warning">Use CitaCal&apos;s JS embed only. Custom iframe embeds are not a supported setup for attribution-critical flows.</Note>
     <H3>When to use a direct link instead</H3>
-    <P>For most use cases — ad campaigns, email CTAs, LinkedIn — a direct link to <Code>citacal.com/your-name/your-slug</Code> is simpler and more reliable for attribution than embedding. The booking page is mobile-responsive and loads in under 2 seconds.</P>
+    <P>For most use cases — ad campaigns, email CTAs, LinkedIn — a direct link to <Code>citacal.com/book/your-name/your-slug</Code> is simpler and more reliable for attribution than embedding. If you use a custom booking subdomain, the path can remain <Code>/your-name/your-slug</Code>. The booking page is mobile-responsive and loads in under 2 seconds.</P>
   </>
 );
 
@@ -421,7 +542,7 @@ const FixIssuesContent = () => (
     <Ul items={[
       "Verify the UTM parameters actually appear in your booking page URL (check the browser address bar)",
       "Check that your ad platform's auto-tagging is enabled",
-      "If using an iframe embed, use the JavaScript src injection method — not a static src",
+      "If embedding, use CitaCal's JavaScript embed snippet (custom iframe setups are not supported)",
       "Test that your redirect chain doesn't strip query parameters (e.g. URL shorteners often do this)",
       "For Google Ads: enable auto-tagging in account settings. For LinkedIn: enable the LinkedIn Insight Tag.",
     ]} />
@@ -439,7 +560,7 @@ const FixIssuesContent = () => (
     <H3>My webhook isn&apos;t receiving data</H3>
     <Ul items={[
       "Webhooks only fire when a booking status becomes 'confirmed' — check the booking status in Analytics",
-      "The webhook URL must be publicly reachable — localhost won't work in production",
+      "The webhook URL must be publicly reachable over HTTPS (private/internal endpoints will fail in production)",
       "Verify the URL in Settings → Webhook URLs is spelled correctly",
       "Your endpoint must return a 2xx HTTP response — non-2xx is logged as a failure",
     ]} />
@@ -475,6 +596,15 @@ const SECTIONS: Section[] = [
       { id: "where-from",      title: "See where your bookings come from", content: <WhereBookingsFromContent /> },
       { id: "analytics",       title: "Read your booking analytics",       content: <ReadAnalyticsContent /> },
       { id: "webhooks",        title: "Send booking data to your CRM",     content: <SendWebhooksContent /> },
+    ],
+  },
+  {
+    id: "tracking-deep-dive", label: "Tracking Deep Dive",
+    articles: [
+      { id: "tracking-intro",  title: "Architecture and decisions",         content: <TrackingDeepDiveIntroContent /> },
+      { id: "tracking-ga4",    title: "GA4 and Google Ads",                 content: <TrackingGa4GoogleContent /> },
+      { id: "tracking-social", title: "Meta, LinkedIn, Microsoft, TikTok",  content: <TrackingPaidSocialContent /> },
+      { id: "tracking-qa",     title: "QA and troubleshooting playbook",    content: <TrackingQaContent /> },
     ],
   },
   {
@@ -534,10 +664,34 @@ function DocsNav({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
 
 /* ─── Main ──────────────────────────────────────────────────── */
 export default function DocsPage() {
-  const allArticles = SECTIONS.flatMap((s) => s.articles);
-  const [activeId, setActiveId] = React.useState(allArticles[0].id);
+  const allArticles = React.useMemo(() => SECTIONS.flatMap((s) => s.articles), []);
+  const defaultArticleId = allArticles[0]?.id ?? "";
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const articleParam = searchParams.get("article");
+  const isValidArticleParam = Boolean(articleParam && allArticles.some((a) => a.id === articleParam));
+
+  const [activeId, setActiveId] = React.useState(isValidArticleParam && articleParam ? articleParam : defaultArticleId);
   const [search, setSearch] = React.useState("");
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+
+  const setActiveArticle = React.useCallback(
+    (nextId: string) => {
+      setActiveId(nextId);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("article", nextId);
+      const nextQuery = params.toString();
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  React.useEffect(() => {
+    if (isValidArticleParam && articleParam && articleParam !== activeId) {
+      setActiveId(articleParam);
+    }
+  }, [activeId, articleParam, isValidArticleParam]);
 
   const active = allArticles.find((a) => a.id === activeId) ?? allArticles[0];
   const filtered = search.trim()
@@ -585,7 +739,7 @@ export default function DocsPage() {
               {filtered.length === 0 ? (
                 <div style={{ fontSize: 12, color: "#9090B8", padding: "8px 6px" }}>No results</div>
               ) : filtered.map((a) => (
-                <button key={a.id} onClick={() => { setActiveId(a.id); setSearch(""); closeSidebar(); }} style={{
+                <button key={a.id} onClick={() => { setActiveArticle(a.id); setSearch(""); closeSidebar(); }} style={{
                   display: "block", width: "100%", textAlign: "left",
                   padding: "7px 10px", borderRadius: 7, border: "none",
                   background: "transparent", cursor: "pointer",
@@ -602,7 +756,7 @@ export default function DocsPage() {
                 {section.articles.map((article) => {
                   const isActive = article.id === activeId;
                   return (
-                    <button key={article.id} onClick={() => { setActiveId(article.id); closeSidebar(); }} style={{
+                    <button key={article.id} onClick={() => { setActiveArticle(article.id); closeSidebar(); }} style={{
                       display: "block", width: "100%", textAlign: "left",
                       padding: "7px 16px", border: "none", cursor: "pointer",
                       fontSize: 13, fontFamily: "var(--font-sans)",
@@ -641,12 +795,12 @@ export default function DocsPage() {
               return (
                 <>
                   {prev ? (
-                    <button onClick={() => setActiveId(prev.id)} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid rgba(200,198,230,0.5)", background: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, color: "#454560", fontFamily: "var(--font-sans)", textAlign: "left" }}>
+                    <button onClick={() => setActiveArticle(prev.id)} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid rgba(200,198,230,0.5)", background: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, color: "#454560", fontFamily: "var(--font-sans)", textAlign: "left" }}>
                       ← {prev.title}
                     </button>
                   ) : <div />}
                   {next ? (
-                    <button onClick={() => setActiveId(next.id)} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid rgba(200,198,230,0.5)", background: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, color: "#454560", fontFamily: "var(--font-sans)", textAlign: "right" }}>
+                    <button onClick={() => setActiveArticle(next.id)} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid rgba(200,198,230,0.5)", background: "rgba(255,255,255,0.7)", cursor: "pointer", fontSize: 13, color: "#454560", fontFamily: "var(--font-sans)", textAlign: "right" }}>
                       {next.title} →
                     </button>
                   ) : <div />}

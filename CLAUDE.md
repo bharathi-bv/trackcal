@@ -69,6 +69,11 @@ Most developers know code but don't understand which experiments to prioritize, 
 
 **Attribution-safe scheduling SaaS.**
 
+### Naming + User-Facing URL Rule
+- Use `CitaCal` in all user-facing copy.
+- Do not show `localhost`/local dev URLs in app UI or help content.
+- Use `https://citacal.com` (or a real custom domain) in examples and previews.
+
 ### The Problem
 Calendly and similar tools break attribution. UTMs, gclid, li_fat_id, fbclid, and other click IDs are lost when someone books a demo — mainly because calendar embeds are iframes and lose GA/Mixpanel tracking across domains. Marketers lose attribution at the most important moment — the actual conversion.
 
