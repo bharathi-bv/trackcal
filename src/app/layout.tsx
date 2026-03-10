@@ -67,7 +67,12 @@ export default async function RootLayout({
   }
 
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      signInUrl="/login"
+      signUpUrl="/signup"
+      signInFallbackRedirectUrl="/app/dashboard"
+      signUpFallbackRedirectUrl="/app/dashboard"
+    >
     <html lang="en">
       <body className={`${dmSans.variable} ${geistMono.variable} antialiased`}>
         {/* Captures UTM params + initializes Mixpanel on every page load */}
