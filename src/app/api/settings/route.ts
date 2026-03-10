@@ -157,7 +157,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    const { user, unauthorized } = await requireApiUser();
+    const { userId, unauthorized } = await requireApiUser();
     if (unauthorized) return unauthorized;
 
     const parsed = settingsSchema.safeParse(await request.json());
@@ -222,7 +222,7 @@ export async function PUT(request: NextRequest) {
     const payload: Record<string, unknown> = {
       host_name: host_name || null,
       profile_photo_url: profile_photo_url || null,
-      user_id: user!.id,
+      user_id: userId!,
     };
     if (parsed.data.public_slug !== undefined) {
       if (!public_slug) {

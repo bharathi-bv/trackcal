@@ -10,7 +10,7 @@
  */
 
 import { redirect } from "next/navigation";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { auth } from "@clerk/nextjs/server";
 import { createServerClient } from "@/lib/supabase";
 
 export default async function DashboardLayout({
@@ -18,12 +18,9 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createAuthServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
 
-  if (!user) redirect("/login");
+  if (!userId) redirect("/login");
 
   // If this auth account belongs to a team member, send them to their portal.
   // Admins don't have a team_members row → they go to dashboard normally.
@@ -31,7 +28,7 @@ export default async function DashboardLayout({
   const { data: memberRow } = await db
     .from("team_members")
     .select("id")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (memberRow) redirect("/app/member/settings");

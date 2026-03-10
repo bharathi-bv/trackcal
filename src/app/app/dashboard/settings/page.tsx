@@ -1,22 +1,21 @@
 import { Suspense } from "react";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { auth, currentUser, clerkClient } from "@clerk/nextjs/server";
 import { createServerClient } from "@/lib/supabase";
 import { ensureHostPublicSlug } from "@/lib/public-booking-links";
 import SettingsClient from "@/components/dashboard/SettingsClient";
 
 export default async function SettingsPage() {
-  const supabase = await createAuthServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
+  const user = await currentUser();
   const db = createServerClient();
-  const userEmailDomain = user?.email ? user.email.split("@")[1]?.toLowerCase() ?? null : null;
+  const userEmail = user?.emailAddresses[0]?.emailAddress ?? null;
+  const userEmailDomain = userEmail ? userEmail.split("@")[1]?.toLowerCase() ?? null : null;
 
   const [hostPublicSlug, { data: hostSettings }, { data: teamMembers }] = await Promise.all([
     ensureHostPublicSlug({
       db,
-      hostName: user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? null,
-      email: user?.email ?? null,
+      hostName: user?.fullName ?? null,
+      email: userEmail,
     }),
     db
       .from("host_settings")
@@ -32,7 +31,7 @@ export default async function SettingsPage() {
   // Company domain suggestion
   let companyDomainSuggestion: { domain: string; suggestedBy: string } | null = null;
   const currentBookingUrl = (hostSettings as { booking_base_url?: string | null } | null)?.booking_base_url ?? null;
-  if (!currentBookingUrl && userEmailDomain && user?.id) {
+  if (!currentBookingUrl && userEmailDomain && userId) {
     const freeProviders = new Set(["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "protonmail.com", "me.com"]);
     if (!freeProviders.has(userEmailDomain)) {
       try {
@@ -40,21 +39,25 @@ export default async function SettingsPage() {
           .from("host_settings")
           .select("booking_base_url, host_name, user_id")
           .eq("booking_base_url_verified", true)
-          .neq("user_id", user.id)
+          .neq("user_id", userId)
           .limit(5);
 
         if (otherRows && otherRows.length > 0) {
-          const adminClient = createServerClient();
+          const clerk = await clerkClient();
           for (const row of otherRows as { booking_base_url?: string | null; host_name?: string | null; user_id?: string | null }[]) {
             if (!row.user_id || !row.booking_base_url) continue;
-            const { data: { user: otherUser } } = await adminClient.auth.admin.getUserById(row.user_id);
-            const otherDomain = otherUser?.email?.split("@")[1]?.toLowerCase();
-            if (otherDomain === userEmailDomain) {
-              companyDomainSuggestion = {
-                domain: row.booking_base_url,
-                suggestedBy: row.host_name ?? otherUser?.email ?? "a colleague",
-              };
-              break;
+            try {
+              const otherUser = await clerk.users.getUser(row.user_id);
+              const otherDomain = otherUser?.emailAddresses[0]?.emailAddress?.split("@")[1]?.toLowerCase();
+              if (otherDomain === userEmailDomain) {
+                companyDomainSuggestion = {
+                  domain: row.booking_base_url,
+                  suggestedBy: row.host_name ?? otherUser?.emailAddresses[0]?.emailAddress ?? "a colleague",
+                };
+                break;
+              }
+            } catch {
+              // User not found in Clerk — skip
             }
           }
         }
@@ -76,12 +79,9 @@ export default async function SettingsPage() {
             booking_base_url_check_status: (hostSettings as { booking_base_url_check_status?: string | null } | null)?.booking_base_url_check_status ?? null,
           }}
           account={{
-            email: user?.email ?? "",
-            canUsePassword:
-              Array.isArray(user?.app_metadata?.providers) &&
-              user.app_metadata.providers.includes("email"),
-            authProviders:
-              Array.isArray(user?.app_metadata?.providers) ? user.app_metadata.providers : [],
+            email: userEmail ?? "",
+            canUsePassword: false,
+            authProviders: [],
           }}
           googleAvatarUrl={null}
           initialTeamMembers={teamMembers ?? []}

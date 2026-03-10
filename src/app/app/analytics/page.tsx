@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { auth } from "@clerk/nextjs/server";
 import { createServerClient } from "@/lib/supabase";
 import {
   buildPublicBookingPath,
@@ -388,9 +388,8 @@ export default async function AnalyticsPage({
   searchParams: Promise<FilterParams>;
 }) {
   // 1. Auth
-  const supabaseAuth = await createAuthServerClient();
-  const { data: { user } } = await supabaseAuth.auth.getUser();
-  if (!user) redirect("/login");
+  const { userId } = await auth();
+  if (!userId) redirect("/login");
 
   const params = await searchParams;
   const activeTab: AnalyticsTabId =

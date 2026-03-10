@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { createAuthBrowserClient } from "@/lib/supabase-browser";
+import { usePathname } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
 
 type NavItem = {
   id: string;
@@ -100,7 +100,7 @@ function useActiveNav(pathname: string) {
 
 export default function SideNav() {
   const pathname = usePathname();
-  const router = useRouter();
+  const { signOut } = useClerk();
   const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -128,10 +128,7 @@ export default function SideNav() {
   }, [menuOpen]);
 
   async function handleSignOut() {
-    const supabase = createAuthBrowserClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    await signOut({ redirectUrl: "/login" });
   }
 
   return (

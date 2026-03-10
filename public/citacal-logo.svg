@@ -1,0 +1,18 @@
+<svg width="140" height="36" viewBox="0 0 140 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Icon: 28x28, vertically centered in 36px height (y=4) -->
+  <rect x="0" y="4" width="28" height="28" rx="7" fill="#7B6CF6"/>
+  <!-- C arc using same viewBox as the app nav -->
+  <svg x="0" y="4" width="28" height="28" viewBox="-2 0 20 20">
+    <path d="M14.5 5.5C13 3.7 10.8 2.5 8.2 2.5C4.5 2.5 1.5 5.5 1.5 9.5C1.5 13.5 4.5 16.5 8.2 16.5C10.8 16.5 13 15.3 14.5 13.5"
+          stroke="white" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+  </svg>
+  <!-- Wordmark: vertically centered -->
+  <text x="38" y="18"
+        font-family="Manrope, -apple-system, BlinkMacSystemFont, sans-serif"
+        font-size="17"
+        fill="#171717"
+        letter-spacing="-0.3"
+        dominant-baseline="middle">
+    <tspan font-weight="400">Cita</tspan><tspan font-weight="800">Cal</tspan>
+  </text>
+</svg>

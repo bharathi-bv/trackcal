@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { auth } from "@clerk/nextjs/server";
 import { createServerClient } from "@/lib/supabase";
 
 const updateSchema = z.object({
@@ -19,11 +19,8 @@ const updateSchema = z.object({
 });
 
 async function getCurrentUserId() {
-  const supabase = await createAuthServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user?.id ?? null;
+  const { userId } = await auth();
+  return userId;
 }
 
 export async function PUT(request: Request) {

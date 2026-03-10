@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import TeamMembersTab, { type TeamMember } from "@/components/dashboard/TeamMembersTab";
-import { createAuthBrowserClient } from "@/lib/supabase-browser";
+import { useUser } from "@clerk/nextjs";
 import {
   buildPublicBookingPath,
   shouldUseBookPathPrefix,
@@ -44,7 +44,7 @@ export default function SettingsClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = React.useMemo(() => createAuthBrowserClient(), []);
+  const { user: clerkUser } = useUser();
 
   const defaultTab = searchParams.get("tab") === "team" ? "team" : "profile";
   const [activeTab, setActiveTab] = React.useState<"profile" | "team">(defaultTab);
@@ -162,8 +162,14 @@ export default function SettingsClient({
     if (newPassword.length < 6) { setPasswordError("Password must be at least 6 characters."); return; }
     if (newPassword !== confirmPassword) { setPasswordError("Passwords do not match."); return; }
     setSavingPassword(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
-    if (updateError) { setPasswordError(updateError.message); setSavingPassword(false); return; }
+    try {
+      await clerkUser?.updatePassword({ newPassword });
+    } catch (updateError: unknown) {
+      const msg = updateError instanceof Error ? updateError.message : "Failed to update password.";
+      setPasswordError(msg);
+      setSavingPassword(false);
+      return;
+    }
     setPasswordSaved(true);
     setCanUsePassword(true);
     setAuthProviders((current) => current.includes("email") ? current : [...current, "email"]);

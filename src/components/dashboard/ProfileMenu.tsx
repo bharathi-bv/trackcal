@@ -2,8 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { createAuthBrowserClient } from "@/lib/supabase-browser";
+import { useClerk } from "@clerk/nextjs";
 
 // Generic silhouette for when no photo is set
 function Silhouette() {
@@ -19,7 +18,7 @@ export default function ProfileMenu({ email }: { email: string }) {
   const [open, setOpen] = React.useState(false);
   const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
   const ref = React.useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const { signOut } = useClerk();
 
   // Fetch profile photo once on mount
   React.useEffect(() => {
@@ -44,10 +43,7 @@ export default function ProfileMenu({ email }: { email: string }) {
   }, [open]);
 
   async function handleSignOut() {
-    const supabase = createAuthBrowserClient();
-    await supabase.auth.signOut();
-    router.push("/login");
-    router.refresh();
+    await signOut({ redirectUrl: "/login" });
   }
 
   return (

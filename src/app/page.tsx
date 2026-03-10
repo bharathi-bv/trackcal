@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { auth } from "@clerk/nextjs/server";
 
 /* ─── Reusable sub-components ─────────────────────────────── */
 
@@ -253,11 +253,10 @@ export default async function LandingPage({
 
   let isLoggedIn = false;
   try {
-    const supabase = await createAuthServerClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    isLoggedIn = !!session;
+    const { userId } = await auth();
+    isLoggedIn = !!userId;
   } catch {
-    // supabase env vars may not be set in some environments — graceful fallback
+    // auth may not be available in some environments — graceful fallback
   }
 
   return (

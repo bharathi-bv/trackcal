@@ -1,70 +1,20 @@
-/**
- * middleware.ts
- *
- * Runs on every request BEFORE the page renders. Two jobs:
- * 1. Refresh the Supabase session cookie so it doesn't expire mid-visit
- * 2. Protect routes — redirect unauthenticated users away from /dashboard
- *
- * IMPORTANT: createServerClient here uses request.cookies (not next/headers cookies())
- * because middleware runs before the request context is fully set up.
- *
- * Matcher excludes: static files, images, and API routes. Public booking pages
- * may still pass through this middleware, but only /app/* is auth-protected.
- */
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+const isProtected = createRouteMatcher(["/app(.*)"]);
+const isAuth = createRouteMatcher(["/login", "/signup"]);
 
-export default async function proxy(request: NextRequest) {
-  // We need to mutate the response to set refreshed session cookies,
-  // so we build supabaseResponse inside setAll instead of upfront.
-  let supabaseResponse = NextResponse.next({ request });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          // Set cookies on both the request (for downstream middleware) and
-          // the response (so the browser receives updated session tokens)
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          supabaseResponse = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  // Calling getUser() also refreshes the session if it's expired.
-  // Do NOT add any code between createServerClient and getUser().
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const path = request.nextUrl.pathname;
-
-  // Unauthenticated user trying to reach /dashboard → login
-  if (path.startsWith("/app/") && !user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+export default clerkMiddleware(async (auth, req) => {
+  const { userId } = await auth();
+  if (isProtected(req) && !userId) {
+    return NextResponse.redirect(new URL("/login", req.url));
   }
-
-  // Authenticated user visiting login/signup → send to dashboard
-  if ((path === "/login" || path === "/signup") && user) {
-    return NextResponse.redirect(new URL("/app/dashboard", request.url));
+  if (isAuth(req) && userId) {
+    return NextResponse.redirect(new URL("/app/dashboard", req.url));
   }
-
-  return supabaseResponse;
-}
+});
 
 export const config = {
-  // Exclude: Next.js internals, static files, and API routes.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api).*)"],
+  // Exclude Next.js internals, static files. Keep API routes (except webhooks) protected.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/(?!webhooks)).*)"],
 };

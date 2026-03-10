@@ -1,18 +1,15 @@
+import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { createAuthServerClient } from "@/lib/supabase-server";
 
 export async function requireApiUser() {
-  const supabase = await createAuthServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
 
-  if (!user) {
+  if (!userId) {
     return {
-      user: null,
+      userId: null,
       unauthorized: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
 
-  return { user, unauthorized: null };
+  return { userId, unauthorized: null };
 }

@@ -9,10 +9,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createAuthServerClient } from "@/lib/supabase-server";
 
+// Client components use useClerk().signOut() directly.
+// This route is kept as a fallback for plain <a href> links.
 export async function GET(request: NextRequest) {
-  const supabase = await createAuthServerClient();
-  await supabase.auth.signOut();
   return NextResponse.redirect(new URL("/login", request.url));
 }

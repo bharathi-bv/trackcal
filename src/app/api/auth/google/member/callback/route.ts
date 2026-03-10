@@ -11,7 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeAndSaveForMember } from "@/lib/google-calendar";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { auth } from "@clerk/nextjs/server";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
@@ -37,12 +37,9 @@ export async function GET(request: NextRequest) {
     // Check whether the person completing OAuth has an active CitaCal session.
     // Self-service flow (came from /api/auth/google/member/self): user is logged in → /app/member/settings
     // Admin-shared link flow (old): no session → /app/dashboard/settings for the admin to see
-    const supabase = await createAuthServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { userId } = await auth();
 
-    if (user) {
+    if (userId) {
       return NextResponse.redirect(
         new URL("/app/member/settings?connected=1", request.url)
       );

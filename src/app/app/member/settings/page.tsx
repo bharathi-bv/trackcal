@@ -9,18 +9,15 @@
 
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { auth } from "@clerk/nextjs/server";
 import { createServerClient } from "@/lib/supabase";
 import { getMemberCalendarConnectionState } from "@/lib/calendar-connections";
 import MemberSettingsClient from "@/components/member/MemberSettingsClient";
 
 export default async function MemberSettingsPage() {
-  const supabase = await createAuthServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
 
-  if (!user) redirect("/login");
+  if (!userId) redirect("/login");
 
   const db = createServerClient();
   const { data: member } = await db
@@ -28,7 +25,7 @@ export default async function MemberSettingsPage() {
     .select(
       "id, name, email, photo_url, google_refresh_token, google_calendar_ids, microsoft_access_token, microsoft_refresh_token, microsoft_token_expiry, microsoft_calendar_ids"
     )
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .maybeSingle();
 
   // Not a team member — send to login

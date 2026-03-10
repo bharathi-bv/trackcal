@@ -3,6 +3,7 @@ import { DM_Sans, Geist_Mono } from "next/font/google";
 import { GoogleAnalytics, GoogleTagManager } from "@next/third-parties/google";
 import Script from "next/script";
 import { Toaster } from "sonner";
+import { ClerkProvider } from "@clerk/nextjs";
 import AttributionCapture from "@/components/AttributionCapture";
 import { createServerClient } from "@/lib/supabase";
 import "./globals.css";
@@ -66,6 +67,7 @@ export default async function RootLayout({
   }
 
   return (
+    <ClerkProvider>
     <html lang="en">
       <body className={`${dmSans.variable} ${geistMono.variable} antialiased`}>
         {/* Captures UTM params + initializes Mixpanel on every page load */}
@@ -141,5 +143,6 @@ export default async function RootLayout({
         <GoogleAnalytics gaId={googleAnalyticsId} />
       )}
     </html>
+    </ClerkProvider>
   );
 }

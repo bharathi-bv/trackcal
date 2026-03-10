@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAuthServerClient } from "@/lib/supabase-server";
+import { auth } from "@clerk/nextjs/server";
 import { createServerClient } from "@/lib/supabase";
 import { getMicrosoftAuthUrlForMember } from "@/lib/outlook-calendar";
 
 export async function GET(request: NextRequest) {
-  const supabase = await createAuthServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { userId } = await auth();
 
-  if (!user) {
+  if (!userId) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
@@ -17,7 +14,7 @@ export async function GET(request: NextRequest) {
   const { data: member } = await db
     .from("team_members")
     .select("id")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (!member) {
