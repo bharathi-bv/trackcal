@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type {
   TeamAvailabilityMember,
@@ -270,7 +271,7 @@ export default function MemberSettingsClient({
         >
           CitaCal
         </span>
-        <a
+        <Link
           href="/auth/signout"
           style={{
             fontSize: 12,
@@ -280,7 +281,7 @@ export default function MemberSettingsClient({
           }}
         >
           Sign out
-        </a>
+        </Link>
       </div>
 
       <div style={{ width: "100%", maxWidth: 480 }}>
@@ -407,28 +408,28 @@ export default function MemberSettingsClient({
               <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
                 {!calConnected && (
                   <>
-                    <a
+                    <Link
                       href="/api/auth/google/member/self"
                       className="tc-btn tc-btn--primary tc-btn--sm"
                     >
                       Connect Google Calendar
-                    </a>
-                    <a
+                    </Link>
+                    <Link
                       href="/api/auth/microsoft/member/self"
                       className="tc-btn tc-btn--secondary tc-btn--sm"
                     >
                       Connect Outlook Calendar
-                    </a>
+                    </Link>
                   </>
                 )}
                 {calConnected && (
                   <>
-                    <a
+                    <Link
                       href={connectedProvider === "microsoft" ? "/api/auth/microsoft/member/self" : "/api/auth/google/member/self"}
                       className="tc-btn tc-btn--secondary tc-btn--sm"
                     >
                       Reconnect
-                    </a>
+                    </Link>
                     <button
                       type="button"
                       className="tc-btn tc-btn--ghost tc-btn--sm"
@@ -442,6 +443,16 @@ export default function MemberSettingsClient({
                 )}
               </div>
             </div>
+
+            <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "var(--space-3) 0 0", lineHeight: 1.6 }}>
+              <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+                Terms
+              </Link>{" "}
+              ·{" "}
+              <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+                Privacy
+              </Link>
+            </p>
 
             {disconnectError && (
               <p style={{ fontSize: 12, color: "var(--error)", marginTop: "var(--space-2)" }}>

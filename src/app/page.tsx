@@ -756,6 +756,8 @@ export default async function LandingPage({
         </div>
         <div style={{ display: "flex", gap: 24, fontSize: 12, color: "#9090B8" }}>
           <a href="/docs" style={{ color: "#9090B8", textDecoration: "none" }}>Documentation</a>
+          <a href="/terms" style={{ color: "#9090B8", textDecoration: "none" }}>Terms</a>
+          <a href="/privacy" style={{ color: "#9090B8", textDecoration: "none" }}>Privacy</a>
           <a href="/login" style={{ color: "#9090B8", textDecoration: "none" }}>Sign in</a>
           <a href="/signup" style={{ color: "#9090B8", textDecoration: "none" }}>Sign up</a>
         </div>

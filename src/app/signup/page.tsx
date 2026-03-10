@@ -111,8 +111,8 @@ function SignupContent() {
     try {
       await signIn.authenticateWithRedirect({
         strategy: "oauth_google",
-        redirectUrl: window.location.origin + "/sso-callback",
-        redirectUrlComplete: window.location.origin + "/app/dashboard",
+        redirectUrl: "/sso-callback",
+        redirectUrlComplete: "/app/dashboard",
       });
     } catch (err: unknown) {
       console.error("Google OAuth error:", err);
@@ -190,6 +190,7 @@ function SignupContent() {
                 Go back
               </button>
             </p>
+
           </div>
         </main>
       </div>
@@ -340,6 +341,26 @@ function SignupContent() {
             <Link href="/login" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
               Sign in
             </Link>
+          </p>
+
+          <p
+            style={{
+              textAlign: "center",
+              marginTop: "var(--space-4)",
+              fontSize: 12,
+              color: "var(--text-tertiary)",
+              lineHeight: 1.6,
+            }}
+          >
+            By creating an account, you agree to our{" "}
+            <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+              Terms
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+              Privacy Statement
+            </Link>
+            .
           </p>
         </div>
       </main>

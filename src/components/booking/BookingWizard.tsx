@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useBookingStore } from "@/store/bookingStore";
 import DetailsForm from "@/components/booking/DetailsForm";
 import ThreeDaySlotPicker from "@/components/booking/ThreeDaySlotPicker";
@@ -270,6 +271,15 @@ function CalendarPickerModal({
         <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)", textAlign: "center" }}>
           Read-only · Not stored · Revoked when you leave
         </p>
+        <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", lineHeight: 1.6 }}>
+          <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+            Terms
+          </Link>{" "}
+          ·{" "}
+          <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+            Privacy
+          </Link>
+        </p>
       </div>
     </div>
   );
@@ -411,6 +421,16 @@ function VisitorCalendarSelectionModal({
             {saving ? "Updating…" : "Update overlay"}
           </button>
         </div>
+
+        <p style={{ margin: 0, fontSize: 11, color: "var(--text-tertiary)", textAlign: "center", lineHeight: 1.6 }}>
+          <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+            Terms
+          </Link>{" "}
+          ·{" "}
+          <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+            Privacy
+          </Link>
+        </p>
       </div>
     </div>
   );

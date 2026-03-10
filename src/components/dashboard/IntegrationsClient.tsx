@@ -291,6 +291,16 @@ export default function IntegrationsClient({
           </div>
         </div>
 
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 var(--space-4)", lineHeight: 1.6 }}>
+          <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+            Terms
+          </Link>{" "}
+          ·{" "}
+          <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+            Privacy
+          </Link>
+        </p>
+
         {/* Calendar picker */}
         {calConnected && provider && calendarOptions.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>

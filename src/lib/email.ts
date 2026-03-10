@@ -21,7 +21,7 @@ function getResend(): Resend | null {
 }
 
 const FROM =
-  process.env.RESEND_FROM_EMAIL ?? "CitaCal <noreply@citacal.com>";
+  process.env.RESEND_FROM_EMAIL ?? "CitaCal <support@citacal.com>";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -231,6 +231,26 @@ function LoginContent() {
               Sign up
             </Link>
           </p>
+
+          <p
+            style={{
+              textAlign: "center",
+              marginTop: "var(--space-4)",
+              fontSize: 12,
+              color: "var(--text-tertiary)",
+              lineHeight: 1.6,
+            }}
+          >
+            By continuing, you agree to our{" "}
+            <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+              Terms
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
+              Privacy Statement
+            </Link>
+            .
+          </p>
         </div>
       </main>
     </div>
