@@ -664,6 +664,14 @@ function DocsNav({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
 
 /* ─── Main ──────────────────────────────────────────────────── */
 export default function DocsPage() {
+  return (
+    <React.Suspense>
+      <DocsPageInner />
+    </React.Suspense>
+  );
+}
+
+function DocsPageInner() {
   const allArticles = React.useMemo(() => SECTIONS.flatMap((s) => s.articles), []);
   const defaultArticleId = allArticles[0]?.id ?? "";
   const router = useRouter();

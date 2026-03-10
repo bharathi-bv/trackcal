@@ -28,7 +28,7 @@ function resolveDnsTargetHost() {
 export default async function TrackingPage() {
   const db = createServerClient();
 
-  const [{ data: hostSettings }, { data: allActiveEvents }] =
+  const [{ data: hostSettings }, { data: firstActiveEvent }] =
     await Promise.all([
       db
         .from("host_settings")
@@ -39,16 +39,17 @@ export default async function TrackingPage() {
         .maybeSingle(),
       db
         .from("event_types")
-        .select("id, name, slug, duration")
+        .select("slug")
         .eq("is_active", true)
-        .order("created_at", { ascending: true }),
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
   const hostPublicSlug =
     (hostSettings as { public_slug?: string | null } | null)?.public_slug ??
     (await ensureHostPublicSlug({ db }));
-  const firstSlug = (allActiveEvents ?? [])[0]?.slug ?? "demo-30min";
-  const exampleEventSlug = firstSlug;
+  const exampleEventSlug = (firstActiveEvent as { slug?: string } | null)?.slug ?? "demo-30min";
   const exampleBookingUrl = buildPublicBookingUrl(
     "https://citacal.com",
     hostPublicSlug,
@@ -70,17 +71,6 @@ export default async function TrackingPage() {
     exampleEventSlug
   );
   const dnsTargetHost = resolveDnsTargetHost();
-
-  const bookingLinks = (allActiveEvents ?? []).map((evt) => ({
-    id: evt.id as string,
-    name: evt.name as string,
-    duration: evt.duration as number,
-    url: buildPublicBookingUrl(
-      customBaseUrl ?? "https://citacal.com",
-      hostPublicSlug,
-      evt.slug as string
-    ),
-  }));
   const rawCheckStatus = (
     hostSettings as { booking_base_url_check_status?: string | null } | null
   )?.booking_base_url_check_status;
@@ -91,7 +81,6 @@ export default async function TrackingPage() {
     <>
       <Integrations2Workspace
         exampleBookingUrl={exampleBookingUrl}
-        bookingLinks={bookingLinks}
         initialHostSettings={{
           bookingLinkHeaderCode:
             (hostSettings as { booking_link_header_code?: string | null } | null)

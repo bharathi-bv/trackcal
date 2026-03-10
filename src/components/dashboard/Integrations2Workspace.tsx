@@ -54,17 +54,9 @@ const TABS = [
   { id: "domain",        label: "Custom Domain"            },
   { id: "booking-links", label: "Booking links tracking"   },
   { id: "embed",         label: "Embed widgets tracking"   },
-  { id: "my-links",      label: "My links"                 },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
-
-type BookingLink = {
-  id: string;
-  name: string;
-  duration: number;
-  url: string;
-};
 
 function CodeBlock({ code }: { code: string }) {
   return (
@@ -190,94 +182,14 @@ function OverviewTab({ onNavigate }: { onNavigate: (tab: TabId) => void }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-function MyLinksTab({ bookingLinks }: { bookingLinks: BookingLink[] }) {
-  const [copiedId, setCopiedId] = React.useState<string | null>(null);
-
-  function copyUrl(id: string, url: string) {
-    navigator.clipboard.writeText(url).then(() => {
-      setCopiedId(id);
-      window.setTimeout(() => setCopiedId(null), 2000);
-    });
-  }
-
-  if (bookingLinks.length === 0) {
-    return (
-      <div style={{ maxWidth: 680 }}>
-        <p style={{ fontSize: 14, color: "var(--text-tertiary)", margin: 0 }}>
-          No active meeting types yet.{" "}
-          <a href="/app/dashboard/event-types" style={{ color: "var(--blue-400)", textDecoration: "none", fontWeight: 500 }}>
-            Create one →
-          </a>
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ maxWidth: 720 }}>
-      <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "0 0 var(--space-5)", fontWeight: 500 }}>
-        Your active booking links. Share these directly or embed them on your site.
-      </p>
-      <div style={{ border: "1px solid var(--border-default)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 80px 1fr auto",
-            gap: "var(--space-4)",
-            padding: "var(--space-3) var(--space-5)",
-            background: "var(--surface-subtle)",
-            borderBottom: "1px solid var(--border-default)",
-          }}
-        >
-          {["Meeting type", "Duration", "Booking link", ""].map((h) => (
-            <span key={h} style={{ fontSize: 11, fontWeight: 700, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
-              {h}
-            </span>
-          ))}
-        </div>
-        {bookingLinks.map((link, i) => (
-          <div
-            key={link.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 80px 1fr auto",
-              gap: "var(--space-4)",
-              padding: "var(--space-4) var(--space-5)",
-              borderBottom: i < bookingLinks.length - 1 ? "1px solid var(--border-subtle)" : "none",
-              alignItems: "center",
-            }}
-          >
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>{link.name}</span>
-            <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{link.duration} min</span>
-            <span style={{ fontSize: 12, color: "var(--text-tertiary)", fontFamily: "var(--font-mono, monospace)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {link.url}
-            </span>
-            <button
-              onClick={() => copyUrl(link.id, link.url)}
-              className="tc-btn tc-btn--secondary tc-btn--sm"
-              style={{ whiteSpace: "nowrap", minWidth: 64 }}
-            >
-              {copiedId === link.id ? "Copied!" : "Copy"}
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
-
 export default function Integrations2Workspace({
   exampleBookingUrl,
   initialHostSettings,
   subdomainData,
-  bookingLinks = [],
 }: {
   exampleBookingUrl: string;
   initialHostSettings: HostSettingsSnapshot;
   subdomainData: SubdomainData;
-  bookingLinks?: BookingLink[];
 }) {
   const [activeTab, setActiveTab] = React.useState<TabId>("overview");
 
@@ -520,10 +432,6 @@ export default function Integrations2Workspace({
             </div>
           </div>
         </div>
-      )}
-
-      {activeTab === "my-links" && (
-        <MyLinksTab bookingLinks={bookingLinks} />
       )}
 
       {activeTab === "embed" && (
