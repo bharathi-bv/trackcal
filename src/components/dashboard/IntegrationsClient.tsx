@@ -4,27 +4,12 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-type ConnectedCalendarOption = {
-  id: string;
-  name: string;
-  isPrimary: boolean;
-  provider: "google" | "microsoft";
-};
-
 export default function IntegrationsClient({
-  calendarConnected = false,
-  calendarProvider = null,
-  connectedCalendars = [],
-  selectedCalendarIds = [],
   zoomConnected = false,
   sheetsConnected = false,
   initialSheetId = null,
   initialWebhookUrls = [],
 }: {
-  calendarConnected?: boolean;
-  calendarProvider?: "google" | "microsoft" | null;
-  connectedCalendars?: ConnectedCalendarOption[];
-  selectedCalendarIds?: string[];
   zoomConnected?: boolean;
   sheetsConnected?: boolean;
   initialSheetId?: string | null;
@@ -33,11 +18,6 @@ export default function IntegrationsClient({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [calConnected, setCalConnected] = React.useState(calendarConnected);
-  const [provider, setProvider] = React.useState<"google" | "microsoft" | null>(calendarProvider);
-  const [calendarOptions] = React.useState<ConnectedCalendarOption[]>(connectedCalendars);
-  const [selectedIds, setSelectedIds] = React.useState<string[]>(selectedCalendarIds);
-  const [savingCalendarSelection, setSavingCalendarSelection] = React.useState(false);
   const [disconnecting, setDisconnecting] = React.useState(false);
 
   const [zoomConn, setZoomConn] = React.useState(zoomConnected);
@@ -52,63 +32,10 @@ export default function IntegrationsClient({
   const [error, setError] = React.useState<string | null>(null);
 
   // Toast params
-  const hostCalendarConnected = searchParams.get("calendar_connected");
   const zoomConnectedParam = searchParams.get("zoom_connected");
   const zoomErrorParam = searchParams.get("zoom_error");
   const sheetsConnectedParam = searchParams.get("sheets_connected");
   const sheetsErrorParam = searchParams.get("sheets_error");
-
-  // ── Calendar handlers ──────────────────────────────────────────────────────
-
-  async function handleDisconnectCalendar() {
-    const providerLabel = provider === "microsoft" ? "Outlook Calendar" : "Google Calendar";
-    if (!confirm(`Disconnect your ${providerLabel}? Bookings will no longer sync.`)) return;
-    setDisconnecting(true);
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disconnect_calendar: true }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Disconnect failed");
-      setCalConnected(false);
-      setProvider(null);
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to disconnect calendar.");
-    } finally {
-      setDisconnecting(false);
-    }
-  }
-
-  function toggleCalendarSelection(calendarId: string) {
-    setSelectedIds((current) =>
-      current.includes(calendarId) ? current.filter((id) => id !== calendarId) : [...current, calendarId]
-    );
-  }
-
-  async function handleSaveCalendarSelection() {
-    if (!provider) return;
-    setSavingCalendarSelection(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          provider === "microsoft"
-            ? { microsoft_calendar_ids: selectedIds }
-            : { google_calendar_ids: selectedIds }
-        ),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to save calendars");
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save calendars.");
-    } finally {
-      setSavingCalendarSelection(false);
-    }
-  }
 
   // ── Zoom handlers ──────────────────────────────────────────────────────────
 
@@ -213,12 +140,6 @@ export default function IntegrationsClient({
         </div>
       </div>
 
-      {/* Connection success / error toasts */}
-      {hostCalendarConnected && (
-        <div style={{ marginBottom: "var(--space-5)", fontSize: 13, padding: "var(--space-3) var(--space-4)", borderRadius: "var(--radius-md)", background: "var(--color-success-light, #dcfce7)", color: "var(--color-success)", border: "1px solid var(--color-success)" }}>
-          ✓ {hostCalendarConnected === "microsoft" ? "Outlook Calendar" : "Google Calendar"} connected successfully.
-        </div>
-      )}
       {zoomConnectedParam === "1" && (
         <div style={{ marginBottom: "var(--space-5)", fontSize: 13, padding: "var(--space-3) var(--space-4)", borderRadius: "var(--radius-md)", background: "var(--color-success-light, #dcfce7)", color: "var(--color-success)", border: "1px solid var(--color-success)" }}>
           ✓ Zoom connected successfully.
@@ -243,116 +164,6 @@ export default function IntegrationsClient({
       {error && (
         <p style={{ fontSize: 13, color: "var(--error)", margin: "0 0 var(--space-4)" }}>{error}</p>
       )}
-
-      {/* ── Calendar ── */}
-      <div className="tc-card" style={{ padding: "var(--space-6)", marginBottom: "var(--space-5)" }}>
-        <div style={{ marginBottom: "var(--space-5)", paddingBottom: "var(--space-4)", borderBottom: "1px solid var(--border-default)" }}>
-          <h2 style={{ fontSize: 12, fontWeight: 700, color: "var(--text-tertiary)", margin: 0, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-            Calendar
-          </h2>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)", marginBottom: calConnected && provider && calendarOptions.length > 0 ? "var(--space-5)" : 0, flexWrap: "wrap" }}>
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-              {provider === "microsoft" ? "Outlook Calendar" : "Google Calendar"}
-            </p>
-            <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
-              Sync availability and create events on confirmed bookings.
-            </p>
-            {calConnected && (
-              <span className="tc-pill tc-pill--success" style={{ fontSize: 11, marginTop: "var(--space-2)", display: "inline-flex" }}>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--success)", flexShrink: 0, display: "inline-block", marginRight: 4 }} />
-                {provider === "microsoft" ? "Outlook connected" : "Google connected"}
-              </span>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-            {!calConnected ? (
-              <>
-                <Link href="/api/auth/google" className="tc-btn tc-btn--secondary tc-btn--sm">Connect Google</Link>
-                <Link href="/api/auth/microsoft" className="tc-btn tc-btn--secondary tc-btn--sm">Connect Outlook</Link>
-              </>
-            ) : (
-              <>
-                <Link href="/api/auth/google" className="tc-btn tc-btn--secondary tc-btn--sm">Switch to Google</Link>
-                <Link href="/api/auth/microsoft" className="tc-btn tc-btn--secondary tc-btn--sm">Switch to Outlook</Link>
-                <button
-                  type="button"
-                  className="tc-btn tc-btn--ghost tc-btn--sm"
-                  style={{ color: "var(--error)" }}
-                  onClick={handleDisconnectCalendar}
-                  disabled={disconnecting}
-                >
-                  {disconnecting ? "Disconnecting…" : "Disconnect"}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "0 0 var(--space-4)", lineHeight: 1.6 }}>
-          <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
-            Terms
-          </Link>{" "}
-          ·{" "}
-          <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
-            Privacy
-          </Link>
-        </p>
-
-        {/* Calendar picker */}
-        {calConnected && provider && calendarOptions.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-            <div>
-              <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-                Calendars used for availability
-              </p>
-              <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
-                Selected calendars will block open slots on your booking links.
-              </p>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-              {calendarOptions.map((calendar) => {
-                const checked = selectedIds.includes(calendar.id);
-                return (
-                  <label
-                    key={calendar.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "var(--space-3)",
-                      padding: "10px 12px",
-                      borderRadius: "var(--radius-md)",
-                      border: `1px solid ${checked ? "rgba(74,158,255,0.28)" : "var(--border-default)"}`,
-                      background: checked ? "var(--blue-50)" : "var(--surface-page)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", minWidth: 0 }}>
-                      <input type="checkbox" checked={checked} onChange={() => toggleCalendarSelection(calendar.id)} />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {calendar.name}
-                        </div>
-                        {calendar.isPrimary && (
-                          <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>Default calendar</div>
-                        )}
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button type="button" className="tc-btn tc-btn--secondary tc-btn--sm" onClick={handleSaveCalendarSelection} disabled={savingCalendarSelection}>
-                {savingCalendarSelection ? "Saving…" : "Save calendar selection"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* ── Zoom ── */}
       <div className="tc-card" style={{ padding: "var(--space-6)", marginBottom: "var(--space-5)" }}>

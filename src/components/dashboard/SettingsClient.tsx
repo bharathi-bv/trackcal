@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import TeamMembersTab, { type TeamMember } from "@/components/dashboard/TeamMembersTab";
-import { useUser } from "@clerk/nextjs";
+import { useClerk } from "@clerk/nextjs";
 import {
   buildPublicBookingPath,
   shouldUseBookPathPrefix,
@@ -20,8 +21,6 @@ type Settings = {
 
 type AccountSettings = {
   email: string;
-  canUsePassword: boolean;
-  authProviders: string[];
 };
 
 const TABS = [
@@ -44,7 +43,7 @@ export default function SettingsClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user: clerkUser } = useUser();
+  const { signOut } = useClerk();
 
   const defaultTab = searchParams.get("tab") === "team" ? "team" : "profile";
   const [activeTab, setActiveTab] = React.useState<"profile" | "team">(defaultTab);
@@ -61,14 +60,10 @@ export default function SettingsClient({
   const [error, setError] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const [showPasswordForm, setShowPasswordForm] = React.useState(false);
-  const [newPassword, setNewPassword] = React.useState("");
-  const [confirmPassword, setConfirmPassword] = React.useState("");
-  const [savingPassword, setSavingPassword] = React.useState(false);
-  const [passwordSaved, setPasswordSaved] = React.useState(false);
-  const [passwordError, setPasswordError] = React.useState<string | null>(null);
-  const [canUsePassword, setCanUsePassword] = React.useState(account.canUsePassword);
-  const [authProviders, setAuthProviders] = React.useState(account.authProviders);
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = React.useState("");
+  const [deleting, setDeleting] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   const [checkingPublicSlug, setCheckingPublicSlug] = React.useState(false);
   const [publicSlugStatus, setPublicSlugStatus] = React.useState<{
@@ -156,28 +151,20 @@ export default function SettingsClient({
     e.target.value = "";
   }
 
-  async function handleSavePassword() {
-    setPasswordSaved(false);
-    setPasswordError(null);
-    if (newPassword.length < 6) { setPasswordError("Password must be at least 6 characters."); return; }
-    if (newPassword !== confirmPassword) { setPasswordError("Passwords do not match."); return; }
-    setSavingPassword(true);
+  async function handleDeleteAccount() {
+    setDeleteError(null);
+    setDeleting(true);
     try {
-      await clerkUser?.updatePassword({ newPassword });
-    } catch (updateError: unknown) {
-      const msg = updateError instanceof Error ? updateError.message : "Failed to update password.";
-      setPasswordError(msg);
-      setSavingPassword(false);
-      return;
+      const res = await fetch("/api/account", { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || "Failed to delete account.");
+      }
+      await signOut({ redirectUrl: "/" });
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete account.");
+      setDeleting(false);
     }
-    setPasswordSaved(true);
-    setCanUsePassword(true);
-    setAuthProviders((current) => current.includes("email") ? current : [...current, "email"]);
-    setShowPasswordForm(false);
-    setNewPassword("");
-    setConfirmPassword("");
-    router.refresh();
-    setSavingPassword(false);
   }
 
   const displayName = hostName.trim() || "CitaCal";
@@ -191,11 +178,6 @@ export default function SettingsClient({
   const normalizedPublicSlug = slugifyPublicSegment(publicSlug);
   const usesBookPrefix = shouldUseBookPathPrefix(resolvedBaseUrl);
   const bookingPathExample = buildPublicBookingPath(normalizedPublicSlug || "your-name", "your-event", usesBookPrefix);
-  const passwordButtonLabel = canUsePassword ? "Change password" : "Create password";
-  const passwordHelpText = canUsePassword
-    ? "Set a new password for email sign-in."
-    : "Add a password so you can also sign in with email and password.";
-
   return (
     <div style={{ maxWidth: 680 }}>
       {/* Page header */}
@@ -267,47 +249,8 @@ export default function SettingsClient({
               <div className="tc-form-field">
                 <label className="tc-form-label">Email address</label>
                 <input type="email" className="tc-input" value={account.email} disabled />
-                <p className="tc-form-hint">Used for sign-in and booking notifications.</p>
+                <p className="tc-form-hint">Used for sign-in and booking notifications. Sign-in is managed through Google or Microsoft.</p>
               </div>
-
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap", padding: "var(--space-4)", borderRadius: "var(--radius-lg)", background: "var(--surface-subtle)", border: "1px solid var(--border-default)" }}>
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Password</p>
-                  <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "4px 0 0" }}>{passwordHelpText}</p>
-                  {authProviders.length > 0 && (
-                    <p style={{ fontSize: 11, color: "var(--text-tertiary)", margin: "6px 0 0" }}>
-                      Sign-in methods: {authProviders.join(", ")}
-                    </p>
-                  )}
-                </div>
-                <button type="button" className="tc-btn tc-btn--secondary tc-btn--sm" onClick={() => { setShowPasswordForm((c) => !c); setPasswordSaved(false); setPasswordError(null); }}>
-                  {showPasswordForm ? "Close" : passwordButtonLabel}
-                </button>
-              </div>
-
-              {showPasswordForm && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", padding: "var(--space-4)", borderRadius: "var(--radius-lg)", border: "1px solid var(--border-default)" }}>
-                  <div className="tc-form-field">
-                    <label className="tc-form-label">New password</label>
-                    <input type="password" className="tc-input" placeholder="At least 6 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-                  </div>
-                  <div className="tc-form-field">
-                    <label className="tc-form-label">Confirm new password</label>
-                    <input type="password" className="tc-input" placeholder="Repeat your new password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
-                  </div>
-                  {passwordError && <p style={{ fontSize: 13, color: "var(--error)", margin: 0 }}>{passwordError}</p>}
-                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
-                    <button type="button" className="tc-btn tc-btn--primary tc-btn--sm" onClick={handleSavePassword} disabled={savingPassword}>
-                      {savingPassword ? "Saving…" : passwordButtonLabel}
-                    </button>
-                    <button type="button" className="tc-btn tc-btn--ghost tc-btn--sm" onClick={() => { setShowPasswordForm(false); setNewPassword(""); setConfirmPassword(""); setPasswordError(null); }}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {passwordSaved && <p style={{ fontSize: 13, color: "var(--success)", margin: 0, fontWeight: 600 }}>✓ Password updated.</p>}
             </div>
           </div>
 
@@ -375,9 +318,9 @@ export default function SettingsClient({
                   {!bookingBaseUrl.trim() && (
                     <>
                       {" "}·{" "}
-                      <a href="/app/dashboard/integrations" style={{ color: "var(--blue-400)", fontWeight: 600 }}>
+                      <Link href="/app/dashboard/integrations" style={{ color: "var(--blue-400)", fontWeight: 600 }}>
                         Add custom domain →
-                      </a>
+                      </Link>
                     </>
                   )}
                   {bookingBaseUrl.trim() && domainCheckStatus === "verified" && (
@@ -386,9 +329,9 @@ export default function SettingsClient({
                   {bookingBaseUrl.trim() && domainCheckStatus !== "verified" && (
                     <>
                       {" "}·{" "}
-                      <a href="/app/dashboard/integrations" style={{ color: "#d97706", fontWeight: 600 }}>
+                      <Link href="/app/dashboard/integrations" style={{ color: "#d97706", fontWeight: 600 }}>
                         Verify domain →
-                      </a>
+                      </Link>
                     </>
                   )}
                 </p>
@@ -398,9 +341,9 @@ export default function SettingsClient({
                     <strong style={{ color: "var(--text-primary)" }}>Your team is using a custom domain.</strong>{" "}
                     {companyDomainSuggestion.suggestedBy} has already connected{" "}
                     <code style={{ fontSize: 11 }}>{companyDomainSuggestion.domain}</code> — booking links from your team will use this domain.{" "}
-                    <a href="/app/dashboard/integrations" style={{ color: "var(--blue-400)", fontWeight: 600 }}>
+                    <Link href="/app/dashboard/integrations" style={{ color: "var(--blue-400)", fontWeight: 600 }}>
                       Set up your domain →
-                    </a>
+                    </Link>
                   </div>
                 )}
 
@@ -440,6 +383,86 @@ export default function SettingsClient({
             </button>
             {saved && <span style={{ fontSize: 13, color: "var(--success)", fontWeight: 600 }}>✓ Saved</span>}
           </div>
+
+          {/* Danger Zone */}
+          <div style={{ marginTop: "var(--space-8)", borderRadius: "var(--radius-lg)", border: "1px solid #fca5a5", padding: "var(--space-6)" }}>
+            <h2 style={{ fontSize: 12, fontWeight: 700, color: "#dc2626", margin: "0 0 var(--space-4)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              Danger Zone
+            </h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-4)", flexWrap: "wrap" }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Delete account</p>
+                <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "4px 0 0" }}>
+                  Permanently removes your account and all associated data.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowDeleteConfirm(true); setDeleteConfirmText(""); setDeleteError(null); }}
+                style={{ padding: "7px 16px", fontSize: 13, fontWeight: 600, color: "#dc2626", background: "transparent", border: "1px solid #fca5a5", borderRadius: "var(--radius-md)", cursor: "pointer", fontFamily: "var(--font-sans)", whiteSpace: "nowrap", flexShrink: 0 }}
+              >
+                Delete account
+              </button>
+            </div>
+          </div>
+
+          {/* Delete confirm modal */}
+          {showDeleteConfirm && (
+            <div style={{ position: "fixed", inset: 0, zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }} onClick={() => { if (!deleting) setShowDeleteConfirm(false); }}>
+              <div style={{ background: "var(--surface-page)", borderRadius: "var(--radius-xl)", padding: "var(--space-8)", width: "100%", maxWidth: 460, boxShadow: "var(--shadow-lg)", border: "1px solid var(--border-default)" }} onClick={(e) => e.stopPropagation()}>
+                <h2 style={{ fontSize: 18, fontWeight: 800, color: "#dc2626", margin: "0 0 var(--space-4)", letterSpacing: "-0.02em" }}>
+                  Delete your account?
+                </h2>
+
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.6, marginBottom: "var(--space-5)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                  <p style={{ margin: 0 }}>This action <strong style={{ color: "var(--text-primary)" }}>cannot be undone</strong>. The following will be permanently deleted:</p>
+                  <ul style={{ margin: "var(--space-2) 0 0 var(--space-4)", padding: 0, display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+                    <li>Your profile and account settings</li>
+                    <li>All your event types and scheduling links</li>
+                    <li>Your calendar and Zoom connections</li>
+                    <li>Team member associations</li>
+                  </ul>
+                  <p style={{ margin: "var(--space-2) 0 0" }}>
+                    <strong style={{ color: "var(--text-primary)" }}>Existing bookings will not be touched.</strong> Any meetings already scheduled will remain intact.
+                  </p>
+                </div>
+
+                <div className="tc-form-field" style={{ marginBottom: "var(--space-5)" }}>
+                  <label className="tc-form-label">Type <strong>DELETE</strong> to confirm</label>
+                  <input
+                    type="text"
+                    className="tc-input"
+                    placeholder="DELETE"
+                    value={deleteConfirmText}
+                    onChange={(e) => { setDeleteConfirmText(e.target.value); setDeleteError(null); }}
+                    disabled={deleting}
+                    autoFocus
+                  />
+                </div>
+
+                {deleteError && <p style={{ fontSize: 13, color: "#dc2626", margin: "0 0 var(--space-4)" }}>{deleteError}</p>}
+
+                <div style={{ display: "flex", gap: "var(--space-3)", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="tc-btn tc-btn--ghost tc-btn--sm"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={deleting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteAccount}
+                    disabled={deleting || deleteConfirmText.trim() !== "DELETE"}
+                    style={{ padding: "7px 16px", fontSize: 13, fontWeight: 600, color: "white", background: deleteConfirmText.trim() === "DELETE" ? "#dc2626" : "#fca5a5", border: "none", borderRadius: "var(--radius-md)", cursor: deleteConfirmText.trim() === "DELETE" ? "pointer" : "not-allowed", fontFamily: "var(--font-sans)", transition: "background 0.15s" }}
+                  >
+                    {deleting ? "Deleting…" : "Delete my account"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 

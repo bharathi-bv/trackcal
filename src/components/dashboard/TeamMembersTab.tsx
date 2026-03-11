@@ -141,7 +141,7 @@ export default function TeamMembersTab({
         </h2>
         <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "var(--space-1) 0 0" }}>
           Add team members and assign them to event types for round-robin scheduling.
-          An invite email is sent automatically — they sign up and connect their own Google Calendar.
+          An invite email is sent automatically — they continue with Google or Microsoft using the invited email and then connect their calendar.
         </p>
       </div>
 
@@ -276,8 +276,9 @@ export default function TeamMembersTab({
         <strong style={{ color: "var(--text-primary)" }}>How team member calendars work:</strong>
         <ol style={{ margin: "var(--space-2) 0 0", paddingLeft: "var(--space-5)", lineHeight: 1.7 }}>
           <li>Add the member below — a CitaCal invite is emailed to them automatically.</li>
-          <li>They click the link, create their account, and land on their own settings page.</li>
-          <li>They connect their Google Calendar themselves — no link-sharing needed.</li>
+          <li>They continue with Google or Microsoft using that same invited email address.</li>
+          <li>After sign-in, they land on their own member settings page automatically.</li>
+          <li>They connect their calendar themselves — no link-sharing needed.</li>
           <li>The badge on their card changes to <strong>Calendar connected</strong> once they do.</li>
         </ol>
       </div>

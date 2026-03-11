@@ -96,63 +96,72 @@ export function getAuthUrl(state?: string): string {
 }
 
 export async function exchangeCodeAndSave(code: string, userId?: string): Promise<void> {
+  const {
+    upsertCalendarAccount,
+    syncWriteAccountToHostSettings,
+    getWriteCalendarAccount,
+  } = await import("./calendar-accounts");
+
   const auth = getOAuth2Client();
   const { tokens } = await auth.getToken(code);
   auth.setCredentials(tokens);
   const calendars = await listGoogleCalendarsForAuth(auth);
-  const defaultCalendarId = calendars.find((calendar) => calendar.isPrimary)?.id ?? "primary";
+  const primaryCal = calendars.find((c) => c.isPrimary);
+  const defaultCalendarId = primaryCal?.id ?? "primary";
+  // For Google, the primary calendar ID equals the user's email address
+  const email = primaryCal?.id ?? null;
 
   const db = createServerClient();
+
+  // Insert/update in calendar_accounts (multi-account layer)
+  await upsertCalendarAccount(
+    {
+      provider: "google",
+      email,
+      access_token: tokens.access_token ?? null,
+      refresh_token: tokens.refresh_token ?? "",
+      token_expiry: tokens.expiry_date?.toString() ?? null,
+      calendar_ids: [defaultCalendarId],
+    },
+    db
+  );
+
+  // Sync write account to host_settings for backward compat
+  const writeAccount = await getWriteCalendarAccount(db);
+  if (writeAccount) await syncWriteAccountToHostSettings(writeAccount, db);
+
+  // Ensure host_settings row exists for new signups
   const { data: existing } = await db
     .from("host_settings")
     .select("id")
     .limit(1)
     .maybeSingle();
 
-  const tokenData = {
-    google_access_token: tokens.access_token ?? null,
-    ...(tokens.refresh_token ? { google_refresh_token: tokens.refresh_token } : {}),
-    google_token_expiry: tokens.expiry_date?.toString() ?? null,
-    google_calendar_ids: [defaultCalendarId],
-    calendar_provider: "google",
-    microsoft_access_token: null,
-    microsoft_refresh_token: null,
-    microsoft_token_expiry: null,
-    microsoft_calendar_ids: [],
-  };
-
-  const legacyTokenData = {
-    google_access_token: tokens.access_token ?? null,
-    ...(tokens.refresh_token ? { google_refresh_token: tokens.refresh_token } : {}),
-    google_token_expiry: tokens.expiry_date?.toString() ?? null,
-    google_calendar_ids: [defaultCalendarId],
-  };
-
-  if (existing) {
-    let result = await db.from("host_settings").update(tokenData).eq("id", existing.id);
-    if (
-      result.error &&
-      (result.error.code === "42703" ||
-        result.error.message.includes("calendar_provider") ||
-        result.error.message.includes("microsoft_"))
-    ) {
-      result = await db.from("host_settings").update(legacyTokenData).eq("id", existing.id);
+  if (!existing) {
+    const insertData: Record<string, string | string[] | null> = {
+      google_access_token: tokens.access_token ?? null,
+      google_token_expiry: tokens.expiry_date?.toString() ?? null,
+      google_calendar_ids: [defaultCalendarId],
+      calendar_provider: "google",
+    };
+    if (tokens.refresh_token) insertData.google_refresh_token = tokens.refresh_token;
+    if (userId) insertData.user_id = userId;
+    const { error } = await db.from("host_settings").insert(insertData);
+    if (error && !error.message.includes("Could not find")) {
+      throw new Error(`Failed to insert host_settings: ${error.message}`);
     }
-    if (result.error) throw new Error(`Failed to update host_settings: ${result.error.message}`);
-  } else {
-    const insertData = { ...tokenData, ...(userId ? { user_id: userId } : {}) };
-    const legacyInsertData = { ...legacyTokenData, ...(userId ? { user_id: userId } : {}) };
-    let result = await db.from("host_settings").insert(insertData);
-    if (
-      result.error &&
-      (result.error.code === "42703" ||
-        result.error.message.includes("calendar_provider") ||
-        result.error.message.includes("microsoft_"))
-    ) {
-      result = await db.from("host_settings").insert(legacyInsertData);
-    }
-    if (result.error) throw new Error(`Failed to insert host_settings: ${result.error.message}`);
   }
+}
+
+/**
+ * List calendars using an explicit access token (used by multi-account state).
+ */
+export async function listGoogleCalendarsWithAccessToken(
+  accessToken: string
+): Promise<ConnectedCalendar[]> {
+  const auth = getOAuth2Client();
+  auth.setCredentials({ access_token: accessToken });
+  return listGoogleCalendarsForAuth(auth);
 }
 
 // ── Team member OAuth ────────────────────────────────────────────────────────

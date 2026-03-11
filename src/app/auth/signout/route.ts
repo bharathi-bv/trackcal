@@ -1,8 +1,7 @@
 /**
  * GET /auth/signout
  *
- * Signs the user out via Supabase Auth (clears the session cookie)
- * and redirects to /login.
+ * Redirects to /login.
  *
  * Used as a plain <a href="/auth/signout"> link from the member portal
  * where a client-side SignOutButton isn't available.

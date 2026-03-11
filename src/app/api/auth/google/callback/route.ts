@@ -37,14 +37,16 @@ export async function GET(request: NextRequest) {
     const { userId } = await auth();
     await exchangeCodeAndSave(code, userId ?? undefined);
     const successUrl = isOnboarding
-      ? "/app/dashboard"
-      : "/app/dashboard/integrations?calendar_connected=google";
+      ? "/app/getting-started"
+      : "/app/availability?tab=calendar&calendar_connected=google";
     return NextResponse.redirect(new URL(successUrl, request.url));
   } catch (err) {
-    console.error("[google/callback] token exchange failed:", err);
-    const errorUrl = isOnboarding
-      ? "/app/connect-calendar?calendar_error=exchange_failed"
-      : "/app/dashboard/integrations?calendar_error=exchange_failed";
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[google/callback] token exchange failed:", msg);
+    const base = isOnboarding
+      ? "/app/connect-calendar"
+      : "/app/availability?tab=calendar";
+    const errorUrl = `${base}&calendar_error=${encodeURIComponent(msg)}`;
     return NextResponse.redirect(new URL(errorUrl, request.url));
   }
 }

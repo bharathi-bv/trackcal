@@ -80,8 +80,6 @@ export default async function SettingsPage() {
           }}
           account={{
             email: userEmail ?? "",
-            canUsePassword: false,
-            authProviders: [],
           }}
           googleAvatarUrl={null}
           initialTeamMembers={teamMembers ?? []}

@@ -133,6 +133,44 @@ function renderActions(actions: Array<{ label: string; href: string; variant: "p
       .join("")}`;
 }
 
+export interface SendTeamMemberInviteParams {
+  toEmail: string;
+  memberName: string;
+  signupUrl: string;
+  loginUrl: string;
+}
+
+export async function sendTeamMemberInviteEmail(
+  p: SendTeamMemberInviteParams
+): Promise<void> {
+  const resend = getResend();
+  if (!resend) return;
+
+  const actions = renderActions([
+    { label: "Create account", href: p.signupUrl, variant: "primary" },
+    { label: "Sign in", href: p.loginUrl, variant: "ghost" },
+  ]);
+
+  const html = emailShell(`
+    <p class="title">You&apos;ve been added to a CitaCal team</p>
+    <p class="subtitle">Use the same email address this invite was sent to so we can link you to your team member profile automatically.</p>
+    <div class="detail-row"><span class="detail-label">Email</span><span class="detail-value">${p.toEmail}</span></div>
+    <div class="detail-row"><span class="detail-label">Member</span><span class="detail-value">${p.memberName}</span></div>
+    <hr class="divider" />
+    <p class="subtitle" style="margin-bottom:16px;">
+      Continue with Google or Microsoft, then connect your calendar. Once you&apos;re signed in, CitaCal will take you straight to your member settings page.
+    </p>
+    ${actions}
+  `);
+
+  await resend.emails.send({
+    from: FROM,
+    to: p.toEmail,
+    subject: "You’ve been invited to join a CitaCal team",
+    html,
+  });
+}
+
 export async function sendBookingConfirmationToAttendee(
   p: SendConfirmationParams
 ): Promise<void> {

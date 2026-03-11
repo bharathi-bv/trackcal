@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
+import { useClerk, useUser } from "@clerk/nextjs";
 
 type NavItem = {
   id: string;
@@ -42,6 +42,18 @@ const NAV_ITEMS: NavItem[] = [
       <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden>
         <path d="M8.5 11.5a3 3 0 0 0 3 0l4-4a3 3 0 0 0-4.24-4.24l-1 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
         <path d="M11.5 8.5a3 3 0 0 0-3 0l-4 4a3 3 0 0 0 4.24 4.24l1-1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    ),
+  },
+  {
+    id: "availability",
+    label: "Availability",
+    href: "/app/availability",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden>
+        <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M7 2v4M13 2v4M3 9h14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <path d="M7 13h2M11 13h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
       </svg>
     ),
   },
@@ -100,6 +112,7 @@ const NAV_ITEMS: NavItem[] = [
 function useActiveNav(pathname: string) {
   // Most specific match wins
   if (pathname.startsWith("/app/getting-started")) return "getting-started";
+  if (pathname.startsWith("/app/availability")) return "availability";
   if (pathname.startsWith("/app/dashboard/integrations")) return "integrations";
   if (pathname.startsWith("/app/dashboard/settings")) return "settings";
   if (pathname.startsWith("/app/dashboard/event-types")) return "event-types";
@@ -112,10 +125,12 @@ function useActiveNav(pathname: string) {
 export default function SideNav() {
   const pathname = usePathname();
   const { signOut } = useClerk();
+  const { user } = useUser();
   const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const activeId = useActiveNav(pathname ?? "");
+  const signedInEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? null;
 
   React.useEffect(() => {
     fetch("/api/settings")
@@ -230,8 +245,6 @@ export default function SideNav() {
             background: menuOpen ? "var(--color-primary-light)" : "transparent",
             border: "none",
             cursor: "pointer",
-            fontSize: 13,
-            fontWeight: 500,
             color: "var(--color-text-muted)",
             fontFamily: "var(--font-sans)",
             textAlign: "left",
@@ -260,7 +273,24 @@ export default function SideNav() {
               </svg>
             )}
           </div>
-          Account
+          <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-muted)" }}>Account</span>
+            {signedInEmail && (
+              <span
+                style={{
+                  fontSize: 11,
+                  lineHeight: 1.3,
+                  color: "var(--color-text-tertiary, #98A2B3)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: 150,
+                }}
+              >
+                {signedInEmail}
+              </span>
+            )}
+          </span>
         </button>
 
         {menuOpen && (

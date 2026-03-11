@@ -6,7 +6,7 @@
  * this route looks up the member by the currently logged-in user's auth session.
  *
  * Flow:
- * 1. Team member is logged into their CitaCal account (via invite email)
+ * 1. Team member signs in to CitaCal with Google or Microsoft using the invited email
  * 2. They click "Connect Google Calendar" on /member/settings
  * 3. This route looks up their team_members row by user_id → calls getAuthUrlForMember
  * 4. Google OAuth callback saves tokens and redirects to /member/settings?connected=1

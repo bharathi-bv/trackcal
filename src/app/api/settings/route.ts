@@ -37,6 +37,12 @@ const settingsSchema = z.object({
   microsoft_calendar_ids: z.array(z.string().trim().min(1)).optional().nullable(),
   // When true, clears all connected host calendar tokens
   disconnect_calendar: z.boolean().optional(),
+  // When true, clears only Google calendar tokens
+  disconnect_google: z.boolean().optional(),
+  // When true, clears only Microsoft calendar tokens
+  disconnect_microsoft: z.boolean().optional(),
+  // Set which provider events are written to
+  write_calendar_provider: z.enum(["google", "microsoft"]).optional(),
   // When true, clears Zoom tokens
   disconnect_zoom: z.boolean().optional(),
   // Google Sheets: save sheet_id from the URL the user pasted
@@ -324,6 +330,24 @@ export async function PUT(request: NextRequest) {
       payload.microsoft_token_expiry = null;
       payload.microsoft_calendar_ids = [];
       payload.calendar_provider = null;
+    }
+    if (parsed.data.disconnect_google === true) {
+      payload.google_access_token = null;
+      payload.google_refresh_token = null;
+      payload.google_token_expiry = null;
+      payload.google_calendar_ids = [];
+      // If google was the write provider, switch to microsoft (or null)
+      if (!payload.calendar_provider) payload.calendar_provider = "microsoft";
+    }
+    if (parsed.data.disconnect_microsoft === true) {
+      payload.microsoft_access_token = null;
+      payload.microsoft_refresh_token = null;
+      payload.microsoft_token_expiry = null;
+      payload.microsoft_calendar_ids = [];
+      if (!payload.calendar_provider) payload.calendar_provider = "google";
+    }
+    if (parsed.data.write_calendar_provider !== undefined) {
+      payload.calendar_provider = parsed.data.write_calendar_provider;
     }
 
     // Clear Zoom tokens if disconnect requested

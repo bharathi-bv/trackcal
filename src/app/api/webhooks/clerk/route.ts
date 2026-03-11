@@ -4,7 +4,7 @@
  * Receives Clerk webhook events. On user.created, links the new Clerk user
  * to a pending team_members row if their email matches an invite.
  *
- * This replaces the invite-linking logic that was in /auth/callback.
+ * This links invited members after they finish the OAuth-based signup flow.
  *
  * Setup: Clerk Dashboard → Webhooks → add endpoint, subscribe to user.created.
  */

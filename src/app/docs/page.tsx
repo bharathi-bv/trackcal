@@ -442,8 +442,8 @@ const AddTeamContent = () => (
     <H3>Invite someone to your team</H3>
     <Steps steps={[
       { title: "Go to Settings → Team Members tab", body: "Click '+ Invite Member'." },
-      { title: "Enter their name and email", body: "CitaCal sends them an invite email via Supabase Auth." },
-      { title: "They accept and connect their calendar", body: "They click the link in the email, set a password, and land on their Member Settings page where they connect their Google or Outlook calendar." },
+      { title: "Enter their name and email", body: "CitaCal sends them an invite email with links to sign up or sign in." },
+      { title: "They accept and connect their calendar", body: "They continue with Google or Microsoft using the invited email, then land on their Member Settings page where they connect their Google or Outlook calendar." },
     ]} />
     <Note type="info">Team members each connect their own personal calendar. CitaCal checks each person&apos;s real availability before assigning them a booking.</Note>
     <H3>Route bookings to your team automatically</H3>

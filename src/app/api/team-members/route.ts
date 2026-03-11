@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase";
 import { requireApiUser } from "@/lib/api-auth";
+import { sendTeamMemberInviteEmail } from "@/lib/email";
 import { z } from "zod";
 
 const createSchema = z.object({
@@ -58,13 +59,15 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Send Supabase Auth invite so the team member can create their own account.
-  // inviteUserByEmail uses the service_role key — no external email service needed.
-  // Non-blocking: a failed invite (e.g. email already exists) doesn't block member creation.
+  // Send a CitaCal invite email that routes members into the OAuth-only auth flow.
+  // Non-blocking: a failed email does not block member creation.
   const appUrl = request.nextUrl.origin || process.env.NEXT_PUBLIC_APP_URL || "";
   try {
-    await db.auth.admin.inviteUserByEmail(parsed.data.email, {
-      redirectTo: `${appUrl}/auth/callback`,
+    await sendTeamMemberInviteEmail({
+      toEmail: parsed.data.email,
+      memberName: parsed.data.name,
+      signupUrl: `${appUrl}/signup`,
+      loginUrl: `${appUrl}/login`,
     });
   } catch (inviteErr) {
     console.error("[team-members] invite email failed (non-blocking):", inviteErr);

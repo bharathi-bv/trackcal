@@ -287,21 +287,35 @@ async function saveHostMicrosoftTokens(tokens: {
     microsoft_access_token: tokens.access_token ?? null,
     microsoft_token_expiry: tokens.expiry ?? null,
     calendar_provider: "microsoft",
-    google_access_token: null,
-    google_refresh_token: null,
-    google_token_expiry: null,
-    google_calendar_ids: [],
     microsoft_calendar_ids: tokens.calendar_ids ?? existing?.microsoft_calendar_ids ?? [],
     ...(tokens.refresh_token ? { microsoft_refresh_token: tokens.refresh_token } : {}),
   };
 
+  // Minimal fallback — only columns that have existed since day 1
+  const minimalTokenData = {
+    microsoft_access_token: tokens.access_token ?? null,
+    microsoft_token_expiry: tokens.expiry ?? null,
+    ...(tokens.refresh_token ? { microsoft_refresh_token: tokens.refresh_token } : {}),
+  };
+
+  function isColumnError(err: { code?: string; message?: string } | null) {
+    return err?.code === "42703" || (err?.message ?? "").includes("Could not find");
+  }
+
   if (existing) {
-    const { error } = await db.from("host_settings").update(tokenData).eq("id", existing.id);
-    if (error) throw new Error(`Failed to update host_settings: ${error.message}`);
+    let result = await db.from("host_settings").update(tokenData).eq("id", existing.id);
+    if (result.error && isColumnError(result.error)) {
+      result = await db.from("host_settings").update(minimalTokenData).eq("id", existing.id);
+    }
+    if (result.error) throw new Error(`Failed to update host_settings: ${result.error.message}`);
   } else {
     const insertData = { ...tokenData, ...(tokens.userId ? { user_id: tokens.userId } : {}) };
-    const { error } = await db.from("host_settings").insert(insertData);
-    if (error) throw new Error(`Failed to insert host_settings: ${error.message}`);
+    const minimalInsertData = { ...minimalTokenData, ...(tokens.userId ? { user_id: tokens.userId } : {}) };
+    let result = await db.from("host_settings").insert(insertData);
+    if (result.error && isColumnError(result.error)) {
+      result = await db.from("host_settings").insert(minimalInsertData);
+    }
+    if (result.error) throw new Error(`Failed to insert host_settings: ${result.error.message}`);
   }
 }
 
@@ -521,7 +535,7 @@ async function getOutlookMailboxTimezone(accessToken?: string) {
   };
 }
 
-async function listOutlookCalendarsWithAccessToken(accessToken: string): Promise<ConnectedOutlookCalendar[]> {
+export async function listOutlookCalendarsWithAccessToken(accessToken: string): Promise<ConnectedOutlookCalendar[]> {
   let url =
     `${MICROSOFT_GRAPH_BASE}/me/calendars?` +
     new URLSearchParams({
@@ -566,12 +580,18 @@ export function getMicrosoftAuthUrl(state?: string) {
   url.searchParams.set("redirect_uri", getMicrosoftRedirectUri());
   url.searchParams.set("response_mode", "query");
   url.searchParams.set("scope", MICROSOFT_SCOPES.join(" "));
-  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("prompt", "select_account");
   if (state) url.searchParams.set("state", state);
   return url.toString();
 }
 
 export async function exchangeMicrosoftCodeAndSave(code: string, userId?: string) {
+  const {
+    upsertCalendarAccount,
+    syncWriteAccountToHostSettings,
+    getWriteCalendarAccount,
+  } = await import("./calendar-accounts");
+
   const tokens = await exchangeMicrosoftToken({
     grant_type: "authorization_code",
     code,
@@ -579,11 +599,47 @@ export async function exchangeMicrosoftCodeAndSave(code: string, userId?: string
     scope: MICROSOFT_SCOPES.join(" "),
   });
 
+  // Fetch the user's email from Microsoft Graph /me
+  let email: string | null = null;
+  try {
+    const meRes = await fetch(`${MICROSOFT_GRAPH_BASE}/me`, {
+      headers: { authorization: `Bearer ${tokens.access_token}` },
+    });
+    if (meRes.ok) {
+      const me = (await meRes.json()) as { mail?: string; userPrincipalName?: string };
+      email = me.mail ?? me.userPrincipalName ?? null;
+    }
+  } catch {
+    // email stays null — not critical
+  }
+
   const calendars = await listOutlookCalendarsWithAccessToken(tokens.access_token);
-  const defaultCalendarId = calendars.find((calendar) => calendar.isPrimary)?.id ?? calendars[0]?.id;
+  const defaultCalendarId = calendars.find((c) => c.isPrimary)?.id ?? calendars[0]?.id;
+  const calendarIds = defaultCalendarId ? [defaultCalendarId] : [];
+
+  const db = createServerClient();
+
+  // Insert/update in calendar_accounts (multi-account layer)
+  await upsertCalendarAccount(
+    {
+      provider: "microsoft",
+      email,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token ?? "",
+      token_expiry: tokens.expiry,
+      calendar_ids: calendarIds,
+    },
+    db
+  );
+
+  // Sync write account to host_settings for backward compat
+  const writeAccount = await getWriteCalendarAccount(db);
+  if (writeAccount) await syncWriteAccountToHostSettings(writeAccount, db);
+
+  // Keep host_settings updated (backward compat for existing code)
   await saveHostMicrosoftTokens({
     ...tokens,
-    calendar_ids: defaultCalendarId ? [defaultCalendarId] : [],
+    calendar_ids: calendarIds,
     userId,
   });
 }
@@ -791,7 +847,7 @@ export function getMicrosoftAuthUrlForMember(memberId: string) {
   url.searchParams.set("redirect_uri", getMicrosoftMemberRedirectUri());
   url.searchParams.set("response_mode", "query");
   url.searchParams.set("scope", MICROSOFT_SCOPES.join(" "));
-  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("prompt", "select_account");
   url.searchParams.set("state", `member:${memberId}`);
   return url.toString();
 }

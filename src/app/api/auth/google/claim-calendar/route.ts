@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       await db.from("host_settings").insert({ ...tokenData, user_id: userId });
     }
 
-    return NextResponse.redirect(new URL("/app/dashboard", request.url));
+    return NextResponse.redirect(new URL("/app/getting-started", request.url));
   } catch (err) {
     console.error("[claim-calendar] failed:", err);
     // Fall back to standard calendar OAuth rather than blocking the user

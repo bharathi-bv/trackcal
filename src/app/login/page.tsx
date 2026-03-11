@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useSignIn } from "@clerk/nextjs/legacy";
 
 const GoogleIcon = () => (
@@ -24,15 +24,47 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
-function LoginContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const { signIn, setActive, isLoaded } = useSignIn();
+const AuthBrand = () => (
+  <Link
+    href="/"
+    style={{
+      display: "inline-flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: 14,
+      textDecoration: "none",
+    }}
+  >
+    <div
+      style={{
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        background: "linear-gradient(135deg, #7B6CF6, #A89AF9)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: "0 14px 30px rgba(123,108,246,0.24)",
+      }}
+    >
+      <svg width="22" height="22" viewBox="-2 0 20 20" fill="none" aria-hidden>
+        <path d="M14.5 5.5C13 3.7 10.8 2.5 8.2 2.5C4.5 2.5 1.5 5.5 1.5 9.5C1.5 13.5 4.5 16.5 8.2 16.5C10.8 16.5 13 15.3 14.5 13.5" stroke="white" strokeWidth="2.6" strokeLinecap="round"/>
+      </svg>
+    </div>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 24, fontFamily: "var(--font-sans)", letterSpacing: "-0.03em", lineHeight: 1, color: "#171C33" }}>
+        <span style={{ fontWeight: 400 }}>Cita</span><span style={{ fontWeight: 800, color: "#7B6CF6" }}>Cal</span>
+      </span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.22)", borderRadius: 999, padding: "4px 7px", letterSpacing: "0.06em", lineHeight: 1 }}>
+        BETA
+      </span>
+    </span>
+  </Link>
+);
 
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+function LoginContent() {
+  const searchParams = useSearchParams();
+  const { signIn, isLoaded } = useSignIn();
 
   const authErrorMessage = React.useMemo(() => {
     const authError = searchParams.get("auth_error");
@@ -42,26 +74,6 @@ function LoginContent() {
     }
     return "We couldn't complete that sign-in. Please try again.";
   }, [searchParams]);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!isLoaded) return;
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await signIn.create({ identifier: email, password });
-      if (result.status === "complete") {
-        await setActive({ session: result.createdSessionId });
-        router.push("/app/dashboard");
-      }
-    } catch (err: unknown) {
-      const msg = (err as { errors?: { message: string }[] })?.errors?.[0]?.message ?? "Sign in failed. Please try again.";
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleGoogleSignIn() {
     if (!isLoaded) return;
@@ -82,175 +94,109 @@ function LoginContent() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "linear-gradient(135deg, #dce8f8 0%, #e8eef7 60%, #d8e4f4 100%)" }}>
-      {/* Auth nav — logo only */}
-      <nav style={{ padding: "16px 24px", display: "flex", alignItems: "center" }}>
-        <Link href="/" style={{ display: "flex", alignItems: "center", gap: 9, textDecoration: "none" }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(135deg, #7B6CF6, #A89AF9)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 2px 8px rgba(123,108,246,0.28)" }}>
-            <svg width="17" height="17" viewBox="-2 0 20 20" fill="none">
-              <path d="M14.5 5.5C13 3.7 10.8 2.5 8.2 2.5C4.5 2.5 1.5 5.5 1.5 9.5C1.5 13.5 4.5 16.5 8.2 16.5C10.8 16.5 13 15.3 14.5 13.5" stroke="white" strokeWidth="2.6" strokeLinecap="round"/>
-            </svg>
-          </div>
-          <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ fontSize: 15, fontFamily: "var(--font-sans)", letterSpacing: "-0.01em", lineHeight: 1 }}>
-              <span style={{ fontWeight: 400, color: "#1A1A2E" }}>Cita</span><span style={{ fontWeight: 800, color: "#7B6CF6" }}>Cal</span>
-            </span>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.25)", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.05em", lineHeight: 1 }}>BETA</span>
-          </span>
-        </Link>
-      </nav>
+    <div style={{ minHeight: "100vh", background: "radial-gradient(circle at top, rgba(255,255,255,0.85) 0%, rgba(232,238,247,0.75) 34%, rgba(216,228,244,0.9) 100%)" }}>
       <main
         style={{
-          flex: 1,
+          minHeight: "100vh",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: "var(--space-6)",
+          padding: "40px 24px",
         }}
       >
-        <div
-          style={{
-            background: "var(--surface-page)",
-            borderRadius: "var(--radius-xl)",
-            boxShadow: "var(--shadow-lg)",
-            padding: "var(--space-10)",
-            width: "100%",
-            maxWidth: 420,
-          }}
-        >
-          <div style={{ marginBottom: "var(--space-8)" }}>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text-primary)", margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-              <span><span style={{ fontWeight: 400 }}>Cita</span>Cal</span>
-              <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.25)", borderRadius: 4, padding: "2px 5px", letterSpacing: "0.05em", lineHeight: 1 }}>BETA</span>
-            </h1>
-            <p style={{ fontSize: 14, color: "var(--text-secondary)", marginTop: "var(--space-1)", margin: 0 }}>
-              Sign in to your account
-            </p>
-          </div>
+        <div style={{ width: "100%", maxWidth: 440, display: "flex", flexDirection: "column", alignItems: "center", gap: 28, transform: "translateY(-24px)" }}>
+          <AuthBrand />
 
-          {authErrorMessage && (
-            <div
-              style={{
-                marginBottom: "var(--space-4)",
-                padding: "12px 14px",
-                borderRadius: "var(--radius-lg)",
-                background: "rgba(245, 158, 11, 0.08)",
-                border: "1px solid rgba(245, 158, 11, 0.2)",
-                color: "#92400e",
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-            >
-              {authErrorMessage}
-            </div>
-          )}
-
-          {/* OAuth buttons */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-            <button
-              type="button"
-              className="tc-btn tc-btn--secondary"
-              onClick={handleGoogleSignIn}
-              style={{ justifyContent: "center", gap: "var(--space-2)", width: "100%" }}
-            >
-              <GoogleIcon />
-              Continue with Google
-            </button>
-            <button
-              type="button"
-              className="tc-btn tc-btn--secondary"
-              onClick={handleMicrosoftSignIn}
-              style={{ justifyContent: "center", gap: "var(--space-2)", width: "100%" }}
-            >
-              <MicrosoftIcon />
-              Continue with Microsoft
-            </button>
-          </div>
-
-          {/* Divider */}
           <div
             style={{
+              background: "rgba(255,255,255,0.82)",
+              border: "1px solid rgba(154, 173, 203, 0.26)",
+              borderRadius: 28,
+              boxShadow: "0 26px 60px rgba(60, 84, 121, 0.12)",
+              backdropFilter: "blur(10px)",
+              padding: "32px 28px 28px",
+              width: "100%",
               display: "flex",
-              alignItems: "center",
-              gap: "var(--space-3)",
-              margin: "var(--space-5) 0",
+              flexDirection: "column",
+              gap: 20,
             }}
           >
-            <div style={{ flex: 1, height: 1, background: "var(--border-default)" }} />
-            <span style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 500 }}>or</span>
-            <div style={{ flex: 1, height: 1, background: "var(--border-default)" }} />
-          </div>
-
-          <form
-            onSubmit={handleSubmit}
-            style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}
-          >
-            <div className="tc-form-field">
-              <label className="tc-form-label">Email</label>
-              <input
-                type="email"
-                className="tc-input"
-                placeholder="you@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+            <div style={{ textAlign: "center" }}>
+              <h1 style={{ fontSize: 36, fontWeight: 800, letterSpacing: "-0.04em", color: "#171C33", margin: 0 }}>
+                Welcome back
+              </h1>
             </div>
 
-            <div className="tc-form-field">
-              <label className="tc-form-label">Password</label>
-              <input
-                type="password"
-                className="tc-input"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            {error && (
-              <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>{error}</p>
+            {authErrorMessage && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: 18,
+                  background: "rgba(245, 158, 11, 0.08)",
+                  border: "1px solid rgba(245, 158, 11, 0.2)",
+                  color: "#92400e",
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}
+              >
+                {authErrorMessage}
+              </div>
             )}
 
-            <button type="submit" className="tc-btn tc-btn--primary" style={{ width: "100%" }} disabled={loading || !isLoaded}>
-              {loading ? "Signing in…" : "Sign in"}
-            </button>
-          </form>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <button
+                type="button"
+                className="tc-btn tc-btn--secondary"
+                onClick={handleGoogleSignIn}
+                style={{
+                  justifyContent: "center",
+                  gap: "var(--space-2)",
+                  width: "100%",
+                  minHeight: 56,
+                  borderRadius: 18,
+                  background: "#FFFFFF",
+                  border: "1px solid rgba(142, 156, 184, 0.34)",
+                  color: "#171C33",
+                  boxShadow: "0 8px 18px rgba(103, 124, 158, 0.08)",
+                }}
+              >
+                <GoogleIcon />
+                Continue with Google
+              </button>
+              <button
+                type="button"
+                className="tc-btn tc-btn--secondary"
+                onClick={handleMicrosoftSignIn}
+                style={{
+                  justifyContent: "center",
+                  gap: "var(--space-2)",
+                  width: "100%",
+                  minHeight: 56,
+                  borderRadius: 18,
+                  background: "rgba(246, 248, 252, 0.92)",
+                  border: "1px solid rgba(142, 156, 184, 0.34)",
+                  color: "#31405C",
+                }}
+              >
+                <MicrosoftIcon />
+                Continue with Microsoft
+              </button>
+            </div>
 
-          <p
-            style={{
-              textAlign: "center",
-              marginTop: "var(--space-6)",
-              fontSize: 14,
-              color: "var(--text-secondary)",
-            }}
-          >
-            Don&apos;t have an account?{" "}
-            <Link href="/signup" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
-              Sign up
-            </Link>
-          </p>
-
-          <p
-            style={{
-              textAlign: "center",
-              marginTop: "var(--space-4)",
-              fontSize: 12,
-              color: "var(--text-tertiary)",
-              lineHeight: 1.6,
-            }}
-          >
-            By continuing, you agree to our{" "}
-            <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
-              Terms
-            </Link>{" "}
-            and{" "}
-            <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
-              Privacy Statement
-            </Link>
-            .
-          </p>
+            <p
+              style={{
+                textAlign: "center",
+                margin: 0,
+                fontSize: 14,
+                color: "var(--text-secondary)",
+              }}
+            >
+              Don&apos;t have an account?{" "}
+              <Link href="/signup" style={{ color: "var(--blue-400)", fontWeight: 600 }}>
+                Sign up
+              </Link>
+            </p>
+          </div>
         </div>
       </main>
     </div>
