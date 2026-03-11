@@ -31,10 +31,10 @@ export default function ConnectCalendarPage() {
 
     const providers = user.externalAccounts.map((a) => a.provider);
 
-    if (providers.includes("oauth_google")) {
+    if (providers.includes("google")) {
       // Google signup — retrieve the already-granted calendar token from Clerk
       window.location.href = "/api/auth/google/claim-calendar";
-    } else if (providers.includes("oauth_microsoft")) {
+    } else if (providers.includes("microsoft")) {
       // Microsoft signup — needs a separate calendar OAuth consent screen
       window.location.href = "/api/auth/microsoft?from=onboarding";
     } else {
