@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import { auth } from "@clerk/nextjs/server";
+import LandingNav from "@/components/marketing/LandingNav";
 
 export const metadata: Metadata = {
   title: "Terms of Service | CitaCal",
@@ -36,16 +38,25 @@ const sectionStyle: CSSProperties = {
   marginTop: 24,
 };
 
-export default function TermsPage() {
+export default async function TermsPage() {
+  let isLoggedIn = false;
+  try {
+    const { userId } = await auth();
+    isLoggedIn = !!userId;
+  } catch {
+    // auth may not be available in some environments — graceful fallback
+  }
+
   return (
-    <main
+    <div
       style={{
         minHeight: "100vh",
         background:
           "linear-gradient(135deg, #dce8f8 0%, #e8eef7 60%, #d8e4f4 100%)",
-        padding: "32px 20px 64px",
       }}
     >
+      <LandingNav isLoggedIn={isLoggedIn} />
+      <main style={{ padding: "32px 20px 64px" }}>
       <div
         style={{
           maxWidth: 860,
@@ -283,6 +294,7 @@ export default function TermsPage() {
           </p>
         </section>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }

@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   try {
     const clerk = await clerkClient();
     const tokens = await clerk.users.getUserOauthAccessToken(userId, "oauth_google");
-    const oauthToken = tokens.data?.[0] ?? tokens[0] ?? null;
+    const oauthToken = tokens.data?.[0] ?? null;
 
     if (!oauthToken?.token) {
       // Token not available — fall back to standard calendar OAuth

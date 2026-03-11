@@ -11,6 +11,11 @@ export async function DELETE() {
   const clerk = await clerkClient();
   const db = createServerClient();
 
+  async function getOauthToken(strategy: "oauth_google" | "oauth_microsoft") {
+    const response = await clerk.users.getUserOauthAccessToken(userId, strategy);
+    return response.data?.[0]?.token ?? null;
+  }
+
   // Fetch stored tokens before we delete rows
   // calendar_accounts has no user_id column (single-host table) — fetch all rows
   const [{ data: hostSettings }, { data: calendarAccounts }] = await Promise.all([
@@ -24,8 +29,7 @@ export async function DELETE() {
   await Promise.allSettled([
     // Google SSO — via Clerk-managed token
     (async () => {
-      const tokens = await clerk.users.getUserOauthAccessToken(userId, "oauth_google");
-      const token = tokens.data?.[0]?.token ?? (tokens as unknown as { token?: string }[])[0]?.token ?? null;
+      const token = await getOauthToken("oauth_google");
       if (token) {
         await fetch(`https://oauth2.googleapis.com/revoke?token=${token}`, { method: "POST" });
       }
@@ -61,8 +65,7 @@ export async function DELETE() {
 
     // Microsoft SSO — if user signed in with a Microsoft account via Clerk
     (async () => {
-      const tokens = await clerk.users.getUserOauthAccessToken(userId, "oauth_microsoft");
-      const token = tokens.data?.[0]?.token ?? (tokens as unknown as { token?: string }[])[0]?.token ?? null;
+      const token = await getOauthToken("oauth_microsoft");
       if (token) {
         await fetch("https://graph.microsoft.com/v1.0/me/revokeSignInSessions", {
           method: "POST",
