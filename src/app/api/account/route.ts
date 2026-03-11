@@ -7,19 +7,20 @@ export async function DELETE() {
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const currentUserId = userId;
 
   const clerk = await clerkClient();
   const db = createServerClient();
 
   async function getOauthToken(strategy: "oauth_google" | "oauth_microsoft") {
-    const response = await clerk.users.getUserOauthAccessToken(userId, strategy);
+    const response = await clerk.users.getUserOauthAccessToken(currentUserId, strategy);
     return response.data?.[0]?.token ?? null;
   }
 
   // Fetch stored tokens before we delete rows
   // calendar_accounts has no user_id column (single-host table) — fetch all rows
   const [{ data: hostSettings }, { data: calendarAccounts }] = await Promise.all([
-    db.from("host_settings").select("microsoft_access_token").eq("user_id", userId).maybeSingle(),
+    db.from("host_settings").select("microsoft_access_token").eq("user_id", currentUserId).maybeSingle(),
     db.from("calendar_accounts").select("provider, access_token"),
   ]);
 
@@ -78,14 +79,14 @@ export async function DELETE() {
 
   // Delete all user data — bookings are intentionally kept
   await Promise.all([
-    db.from("host_settings").delete().eq("user_id", userId),
-    db.from("event_types").delete().eq("user_id", userId),
-    db.from("team_members").delete().eq("user_id", userId),
+    db.from("host_settings").delete().eq("user_id", currentUserId),
+    db.from("event_types").delete().eq("user_id", currentUserId),
+    db.from("team_members").delete().eq("user_id", currentUserId),
     db.from("calendar_accounts").delete().neq("id", ""),  // delete all rows (single-host table)
   ]);
 
   // Delete the Clerk account after external tokens and app data are cleaned up
-  await clerk.users.deleteUser(userId);
+  await clerk.users.deleteUser(currentUserId);
 
   return NextResponse.json({ ok: true });
 }
