@@ -274,6 +274,7 @@ async function saveHostMicrosoftTokens(tokens: {
   refresh_token?: string | null;
   expiry: string | null;
   calendar_ids?: string[];
+  userId?: string;
 }) {
   const db = createServerClient();
   const { data: existing } = await db
@@ -298,7 +299,8 @@ async function saveHostMicrosoftTokens(tokens: {
     const { error } = await db.from("host_settings").update(tokenData).eq("id", existing.id);
     if (error) throw new Error(`Failed to update host_settings: ${error.message}`);
   } else {
-    const { error } = await db.from("host_settings").insert(tokenData);
+    const insertData = { ...tokenData, ...(tokens.userId ? { user_id: tokens.userId } : {}) };
+    const { error } = await db.from("host_settings").insert(insertData);
     if (error) throw new Error(`Failed to insert host_settings: ${error.message}`);
   }
 }
@@ -556,7 +558,7 @@ async function listOutlookCalendarsWithAccessToken(accessToken: string): Promise
   return calendars;
 }
 
-export function getMicrosoftAuthUrl() {
+export function getMicrosoftAuthUrl(state?: string) {
   const tenant = getMicrosoftTenantId();
   const url = new URL(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`);
   url.searchParams.set("client_id", process.env.MICROSOFT_CLIENT_ID!);
@@ -565,10 +567,11 @@ export function getMicrosoftAuthUrl() {
   url.searchParams.set("response_mode", "query");
   url.searchParams.set("scope", MICROSOFT_SCOPES.join(" "));
   url.searchParams.set("prompt", "consent");
+  if (state) url.searchParams.set("state", state);
   return url.toString();
 }
 
-export async function exchangeMicrosoftCodeAndSave(code: string) {
+export async function exchangeMicrosoftCodeAndSave(code: string, userId?: string) {
   const tokens = await exchangeMicrosoftToken({
     grant_type: "authorization_code",
     code,
@@ -581,6 +584,7 @@ export async function exchangeMicrosoftCodeAndSave(code: string) {
   await saveHostMicrosoftTokens({
     ...tokens,
     calendar_ids: defaultCalendarId ? [defaultCalendarId] : [],
+    userId,
   });
 }
 

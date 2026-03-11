@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { exchangeCodeAndSave } from "@/lib/google-calendar";
 
 export async function GET(request: NextRequest) {
@@ -29,15 +30,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const state = request.nextUrl.searchParams.get("state");
+  const isOnboarding = state === "onboarding";
+
   try {
-    await exchangeCodeAndSave(code);
-    return NextResponse.redirect(
-      new URL("/app/dashboard/settings?calendar_connected=google", request.url)
-    );
+    const { userId } = await auth();
+    await exchangeCodeAndSave(code, userId ?? undefined);
+    const successUrl = isOnboarding
+      ? "/app/dashboard"
+      : "/app/dashboard/integrations?calendar_connected=google";
+    return NextResponse.redirect(new URL(successUrl, request.url));
   } catch (err) {
     console.error("[google/callback] token exchange failed:", err);
-    return NextResponse.redirect(
-      new URL("/app/dashboard/settings?calendar_error=exchange_failed", request.url)
-    );
+    const errorUrl = isOnboarding
+      ? "/app/connect-calendar?calendar_error=exchange_failed"
+      : "/app/dashboard/integrations?calendar_error=exchange_failed";
+    return NextResponse.redirect(new URL(errorUrl, request.url));
   }
 }

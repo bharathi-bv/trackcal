@@ -85,16 +85,17 @@ function getMemberOAuth2Client() {
 
 // ── Host OAuth ───────────────────────────────────────────────────────────────
 
-export function getAuthUrl(): string {
+export function getAuthUrl(state?: string): string {
   const auth = getOAuth2Client();
   return auth.generateAuthUrl({
     access_type: "offline",
     scope: SCOPES,
     prompt: "consent",
+    ...(state ? { state } : {}),
   });
 }
 
-export async function exchangeCodeAndSave(code: string): Promise<void> {
+export async function exchangeCodeAndSave(code: string, userId?: string): Promise<void> {
   const auth = getOAuth2Client();
   const { tokens } = await auth.getToken(code);
   auth.setCredentials(tokens);
@@ -139,14 +140,16 @@ export async function exchangeCodeAndSave(code: string): Promise<void> {
     }
     if (result.error) throw new Error(`Failed to update host_settings: ${result.error.message}`);
   } else {
-    let result = await db.from("host_settings").insert(tokenData);
+    const insertData = { ...tokenData, ...(userId ? { user_id: userId } : {}) };
+    const legacyInsertData = { ...legacyTokenData, ...(userId ? { user_id: userId } : {}) };
+    let result = await db.from("host_settings").insert(insertData);
     if (
       result.error &&
       (result.error.code === "42703" ||
         result.error.message.includes("calendar_provider") ||
         result.error.message.includes("microsoft_"))
     ) {
-      result = await db.from("host_settings").insert(legacyTokenData);
+      result = await db.from("host_settings").insert(legacyInsertData);
     }
     if (result.error) throw new Error(`Failed to insert host_settings: ${result.error.message}`);
   }
@@ -553,7 +556,7 @@ export async function isMemberFreeAtSlot(
   return busy.length === 0;
 }
 
-async function listGoogleCalendarsForAuth(
+export async function listGoogleCalendarsForAuth(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   auth: any
 ): Promise<ConnectedCalendar[]> {

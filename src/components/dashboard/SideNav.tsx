@@ -14,6 +14,16 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   {
+    id: "getting-started",
+    label: "Get Started",
+    href: "/app/getting-started",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden>
+        <path d="M10 2L12.4 7.2L18 8L14 11.8L15 17.4L10 14.8L5 17.4L6 11.8L2 8L7.6 7.2L10 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
     id: "bookings",
     label: "Bookings",
     href: "/app/dashboard",
@@ -89,6 +99,7 @@ const NAV_ITEMS: NavItem[] = [
 
 function useActiveNav(pathname: string) {
   // Most specific match wins
+  if (pathname.startsWith("/app/getting-started")) return "getting-started";
   if (pathname.startsWith("/app/dashboard/integrations")) return "integrations";
   if (pathname.startsWith("/app/dashboard/settings")) return "settings";
   if (pathname.startsWith("/app/dashboard/event-types")) return "event-types";
