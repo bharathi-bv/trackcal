@@ -10,15 +10,20 @@ import {
 import { createServerClient } from "@/lib/supabase";
 
 const rangeSchema = z.object({
-  start_hour: z.number().int().min(0).max(23),
-  end_hour: z.number().int().min(1).max(24),
+  start_hour: z.number().min(0).max(23.75),
+  end_hour: z.number().min(0.25).max(24),
 });
 
 const daySchema = z.object({
   enabled: z.boolean(),
-  start_hour: z.number().int().min(0).max(23).optional(),
-  end_hour: z.number().int().min(1).max(24).optional(),
+  start_hour: z.number().min(0).max(23.75).optional(),
+  end_hour: z.number().min(0.25).max(24).optional(),
   ranges: z.array(rangeSchema).optional(),
+});
+
+const dateOverrideSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  ranges: z.array(rangeSchema).min(1),
 });
 
 const patchSchema = z
@@ -27,6 +32,7 @@ const patchSchema = z
     weekly_availability: z.record(z.string(), daySchema).optional(),
     blocked_dates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
     blocked_weekdays: z.array(z.number().int().min(0).max(6)).optional(),
+    date_overrides: z.array(dateOverrideSchema).optional(),
     is_default: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, "No fields provided to update");
@@ -66,6 +72,7 @@ export async function PATCH(
     if (parsed.data.blocked_dates !== undefined) payload.blocked_dates = blockers.dates;
     if (parsed.data.blocked_weekdays !== undefined) payload.blocked_weekdays = blockers.weekdays;
   }
+  if (parsed.data.date_overrides !== undefined) payload.date_overrides = parsed.data.date_overrides;
   if (parsed.data.is_default !== undefined) {
     if (parsed.data.is_default) {
       await db.from("availability_schedules").update({ is_default: false }).eq("is_default", true);
@@ -78,7 +85,7 @@ export async function PATCH(
     .from("availability_schedules")
     .update(payload)
     .eq("id", id)
-    .select("id, name, weekly_availability, blocked_dates, blocked_weekdays, is_default, created_at, updated_at")
+    .select("id, name, weekly_availability, blocked_dates, blocked_weekdays, date_overrides, is_default, created_at, updated_at")
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

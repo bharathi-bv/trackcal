@@ -8,12 +8,18 @@ import {
 } from "@/lib/event-type-config";
 import { createServerClient } from "@/lib/supabase";
 
+export type DateOverride = {
+  date: string; // "YYYY-MM-DD"
+  ranges: { start_hour: number; end_hour: number }[];
+};
+
 export type AvailabilityScheduleRow = {
   id: string;
   name: string;
   weekly_availability: unknown;
   blocked_dates?: unknown;
   blocked_weekdays?: unknown;
+  date_overrides?: unknown;
   is_default: boolean;
   created_at?: string;
   updated_at?: string;
@@ -24,10 +30,24 @@ export type AvailabilitySchedule = {
   name: string;
   weekly_availability: WeeklyAvailability;
   blockers: AvailabilityBlockers;
+  date_overrides: DateOverride[];
   is_default: boolean;
   created_at?: string;
   updated_at?: string;
 };
+
+function normalizeDateOverrides(raw: unknown): DateOverride[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as Array<Record<string, unknown>>)
+    .filter((item) => typeof item?.date === "string" && Array.isArray(item?.ranges))
+    .map((item) => ({
+      date: item.date as string,
+      ranges: (item.ranges as Array<Record<string, unknown>>)
+        .filter((r) => typeof r?.start_hour === "number" && typeof r?.end_hour === "number")
+        .map((r) => ({ start_hour: r.start_hour as number, end_hour: r.end_hour as number })),
+    }))
+    .filter((o) => o.ranges.length > 0);
+}
 
 export function normalizeAvailabilitySchedule(row: AvailabilityScheduleRow): AvailabilitySchedule {
   return {
@@ -38,6 +58,7 @@ export function normalizeAvailabilitySchedule(row: AvailabilityScheduleRow): Ava
       dates: row.blocked_dates,
       weekdays: row.blocked_weekdays,
     }),
+    date_overrides: normalizeDateOverrides(row.date_overrides),
     is_default: row.is_default,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -49,7 +70,7 @@ export async function getAvailabilitySchedules(
 ) {
   const { data, error } = await db
     .from("availability_schedules")
-    .select("id, name, weekly_availability, blocked_dates, blocked_weekdays, is_default, created_at, updated_at")
+    .select("id, name, weekly_availability, blocked_dates, blocked_weekdays, date_overrides, is_default, created_at, updated_at")
     .order("is_default", { ascending: false })
     .order("created_at", { ascending: true });
 
@@ -64,7 +85,7 @@ export async function getDefaultAvailabilitySchedule(
 ) {
   const { data } = await db
     .from("availability_schedules")
-    .select("id, name, weekly_availability, blocked_dates, blocked_weekdays, is_default, created_at, updated_at")
+    .select("id, name, weekly_availability, blocked_dates, blocked_weekdays, date_overrides, is_default, created_at, updated_at")
     .eq("is_default", true)
     .limit(1)
     .maybeSingle();

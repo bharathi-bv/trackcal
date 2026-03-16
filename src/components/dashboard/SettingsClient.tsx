@@ -279,7 +279,7 @@ export default function SettingsClient({
                 <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "2px 0 var(--space-3)", fontWeight: 500 }}>Shown on your booking page</p>
                 <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
                   <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileUpload} />
-                  <button type="button" className="tc-btn tc-btn--secondary tc-btn--sm" onClick={() => fileInputRef.current?.click()}>Upload photo</button>
+                  <button type="button" className="tc-btn tc-btn--secondary tc-btn--sm" onClick={() => fileInputRef.current?.click()}>{showPhoto ? "Change photo" : "Upload photo"}</button>
                   {photoUrl && (
                     <button type="button" className="tc-btn tc-btn--ghost tc-btn--sm" style={{ color: "var(--text-tertiary)" }} onClick={() => { setPhotoUrl(""); setSaved(false); }}>
                       Remove photo
@@ -359,19 +359,6 @@ export default function SettingsClient({
                 </p>
               </div>
 
-              <div className="tc-form-field">
-                <label className="tc-form-label">Photo URL</label>
-                <input
-                  type="url"
-                  className="tc-input"
-                  placeholder="https://..."
-                  value={photoUrl.startsWith("data:") ? "" : photoUrl}
-                  onChange={(e) => { setPhotoUrl(e.target.value); setSaved(false); }}
-                />
-                <p className="tc-form-hint">
-                  {photoUrl.startsWith("data:") ? "Using uploaded photo — save to apply." : "Paste a public URL, or use Upload above."}
-                </p>
-              </div>
             </div>
           </div>
 

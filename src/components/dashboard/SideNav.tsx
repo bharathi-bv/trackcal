@@ -122,22 +122,29 @@ function useActiveNav(pathname: string) {
   return null;
 }
 
-export default function SideNav() {
+export default function SideNav({ initialPhotoUrl = null }: { initialPhotoUrl?: string | null }) {
   const pathname = usePathname();
   const { signOut } = useClerk();
   const { user } = useUser();
-  const [photoUrl, setPhotoUrl] = React.useState<string | null>(null);
+  const [photoUrl, setPhotoUrl] = React.useState<string | null>(initialPhotoUrl);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const activeId = useActiveNav(pathname ?? "");
   const signedInEmail = user?.primaryEmailAddress?.emailAddress ?? user?.emailAddresses?.[0]?.emailAddress ?? null;
+  const displayName = user?.fullName?.trim() || user?.firstName?.trim() || "Account";
 
   React.useEffect(() => {
-    fetch("/api/settings")
+    fetch("/api/settings", { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
-        if (typeof data?.profile_photo_url === "string" && data.profile_photo_url) {
-          setPhotoUrl(data.profile_photo_url);
+        const nextPhotoUrl =
+          typeof data?.settings?.profile_photo_url === "string"
+            ? data.settings.profile_photo_url
+            : typeof data?.profile_photo_url === "string"
+              ? data.profile_photo_url
+              : null;
+        if (nextPhotoUrl) {
+          setPhotoUrl(nextPhotoUrl);
         }
       })
       .catch(() => {/* silent */});
@@ -309,6 +316,50 @@ export default function SideNav() {
               zIndex: 600,
             }}
           >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 12px 12px",
+                borderBottom: "1px solid var(--border-subtle)",
+                marginBottom: "var(--space-1)",
+              }}
+            >
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: "50%",
+                  background: photoUrl ? "transparent" : "#E5E7EB",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  overflow: "hidden",
+                }}
+              >
+                {photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photoUrl} alt={displayName} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }} />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <circle cx="12" cy="8" r="4" fill="#9CA3AF" />
+                    <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" fill="#9CA3AF" />
+                  </svg>
+                )}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {displayName}
+                </div>
+                {signedInEmail && (
+                  <div style={{ fontSize: 11, lineHeight: 1.3, color: "var(--color-text-tertiary, #98A2B3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {signedInEmail}
+                  </div>
+                )}
+              </div>
+            </div>
             <Link
               href="/app/dashboard/settings"
               role="menuitem"

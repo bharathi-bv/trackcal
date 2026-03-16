@@ -24,44 +24,6 @@ const MicrosoftIcon = () => (
   </svg>
 );
 
-const AuthBrand = () => (
-  <Link
-    href="/"
-    style={{
-      display: "inline-flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 14,
-      textDecoration: "none",
-    }}
-  >
-    <div
-      style={{
-        width: 48,
-        height: 48,
-        borderRadius: 14,
-        background: "linear-gradient(135deg, #7B6CF6, #A89AF9)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: "0 14px 30px rgba(123,108,246,0.24)",
-      }}
-    >
-      <svg width="22" height="22" viewBox="-2 0 20 20" fill="none" aria-hidden>
-        <path d="M14.5 5.5C13 3.7 10.8 2.5 8.2 2.5C4.5 2.5 1.5 5.5 1.5 9.5C1.5 13.5 4.5 16.5 8.2 16.5C10.8 16.5 13 15.3 14.5 13.5" stroke="white" strokeWidth="2.6" strokeLinecap="round"/>
-      </svg>
-    </div>
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-      <span style={{ fontSize: 24, fontFamily: "var(--font-sans)", letterSpacing: "-0.03em", lineHeight: 1, color: "#171C33" }}>
-        <span style={{ fontWeight: 400 }}>Cita</span><span style={{ fontWeight: 800, color: "#7B6CF6" }}>Cal</span>
-      </span>
-      <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.12)", border: "1px solid rgba(123,108,246,0.22)", borderRadius: 999, padding: "4px 7px", letterSpacing: "0.06em", lineHeight: 1 }}>
-        BETA
-      </span>
-    </span>
-  </Link>
-);
-
 function SignupContent() {
   const searchParams = useSearchParams();
   const { signIn, isLoaded } = useSignIn();
@@ -81,12 +43,6 @@ function SignupContent() {
       strategy: "oauth_google",
       redirectUrl: "/sso-callback",
       redirectUrlComplete: "/app/dashboard",
-      additionalOauthScopes: {
-        oauth_google: [
-          "https://www.googleapis.com/auth/calendar",
-          "https://www.googleapis.com/auth/calendar.events",
-        ],
-      },
     });
   }
 
@@ -101,132 +57,133 @@ function SignupContent() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "radial-gradient(circle at top, rgba(255,255,255,0.85) 0%, rgba(232,238,247,0.75) 34%, rgba(216,228,244,0.9) 100%)" }}>
-      <main
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "40px 24px",
-        }}
-      >
-        <div style={{ width: "100%", maxWidth: 440, display: "flex", flexDirection: "column", alignItems: "center", gap: 28, transform: "translateY(-24px)" }}>
-          <AuthBrand />
+    <div style={{
+      minHeight: "100vh",
+      background: "linear-gradient(160deg, #f8f9ff 0%, #eef1fb 50%, #e8ecf7 100%)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "100px 24px 40px",
+      fontFamily: "var(--font-sans)",
+    }}>
+      {/* Subtle background orbs */}
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+        <div style={{ position: "absolute", top: "-10%", right: "-5%", width: 480, height: 480, borderRadius: "50%", background: "radial-gradient(circle, rgba(123,108,246,0.08) 0%, transparent 70%)" }} />
+        <div style={{ position: "absolute", bottom: "-5%", left: "-8%", width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle, rgba(74,158,255,0.07) 0%, transparent 70%)" }} />
+      </div>
 
-          <div
-            style={{
-              background: "rgba(255,255,255,0.82)",
-              border: "1px solid rgba(154, 173, 203, 0.26)",
-              borderRadius: 28,
-              boxShadow: "0 26px 60px rgba(60, 84, 121, 0.12)",
-              backdropFilter: "blur(10px)",
-              padding: "32px 28px 28px",
-              width: "100%",
-              display: "flex",
-              flexDirection: "column",
-              gap: 20,
-            }}
-          >
+      <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 440 }}>
+
+        {/* Brand — absolute so only the card is vertically centered */}
+        <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 12, position: "absolute", top: -68, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap" }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 12,
+            background: "linear-gradient(135deg, #7B6CF6 0%, #9D91FA 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 8px 24px rgba(123,108,246,0.28), 0 2px 6px rgba(123,108,246,0.14)",
+            flexShrink: 0,
+          }}>
+            <svg width="20" height="20" viewBox="-2 0 20 20" fill="none" aria-hidden>
+              <path d="M14.5 5.5C13 3.7 10.8 2.5 8.2 2.5C4.5 2.5 1.5 5.5 1.5 9.5C1.5 13.5 4.5 16.5 8.2 16.5C10.8 16.5 13 15.3 14.5 13.5" stroke="white" strokeWidth="2.8" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ fontSize: 22, letterSpacing: "-0.03em", lineHeight: 1, color: "#171C33" }}>
+              <span style={{ fontWeight: 300 }}>Cita</span><span style={{ fontWeight: 800, color: "#7B6CF6" }}>Cal</span>
+            </span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#7B6CF6", background: "rgba(123,108,246,0.10)", border: "1px solid rgba(123,108,246,0.20)", borderRadius: 999, padding: "3px 7px", letterSpacing: "0.08em", lineHeight: 1 }}>
+              BETA
+            </span>
+          </div>
+        </Link>
+
+        {/* Card */}
+        <div style={{
+          width: "100%",
+          background: "rgba(255,255,255,0.88)",
+          border: "1px solid rgba(123,108,246,0.12)",
+          borderRadius: 24,
+          boxShadow: "0 4px 6px rgba(0,0,0,0.04), 0 20px 48px rgba(60,60,120,0.10)",
+          backdropFilter: "blur(12px)",
+          overflow: "hidden",
+        }}>
+          {/* Purple accent top strip */}
+          <div style={{ height: 4, background: "linear-gradient(90deg, #7B6CF6 0%, #A89AF9 60%, #7B6CF6 100%)" }} />
+
+          <div style={{ padding: "36px 36px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+            {/* Heading */}
             <div style={{ textAlign: "center" }}>
-              <h1 style={{ fontSize: 36, fontWeight: 800, letterSpacing: "-0.04em", color: "#171C33", margin: 0 }}>
+              <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.035em", color: "#171C33", margin: "0 0 6px" }}>
                 Create your account
               </h1>
+              <p style={{ margin: 0, fontSize: 14, color: "#5A6485", lineHeight: 1.5 }}>
+                Use CitaCal for free.{" "}
+                <strong style={{ fontWeight: 600, color: "#171C33" }}>No credit card needed.</strong>
+              </p>
             </div>
 
+            {/* Error */}
             {authErrorMessage && (
-              <div
-                style={{
-                  padding: "12px 14px",
-                  borderRadius: 18,
-                  background: "rgba(245, 158, 11, 0.08)",
-                  border: "1px solid rgba(245, 158, 11, 0.2)",
-                  color: "#92400e",
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                }}
-              >
+              <div style={{
+                padding: "11px 14px", borderRadius: 12,
+                background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.22)",
+                color: "#92400e", fontSize: 13, lineHeight: 1.5,
+              }}>
                 {authErrorMessage}
               </div>
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <button
-                type="button"
-                className="tc-btn tc-btn--secondary"
-                onClick={handleGoogleSignUp}
-                style={{
-                  justifyContent: "center",
-                  gap: "var(--space-2)",
-                  width: "100%",
-                  minHeight: 56,
-                  borderRadius: 18,
-                  background: "#FFFFFF",
-                  border: "1px solid rgba(142, 156, 184, 0.34)",
-                  color: "#171C33",
-                  boxShadow: "0 8px 18px rgba(103, 124, 158, 0.08)",
-                }}
-              >
-                <GoogleIcon />
-                Continue with Google
-              </button>
-              <button
-                type="button"
-                className="tc-btn tc-btn--secondary"
-                onClick={handleMicrosoftSignUp}
-                style={{
-                  justifyContent: "center",
-                  gap: "var(--space-2)",
-                  width: "100%",
-                  minHeight: 56,
-                  borderRadius: 18,
-                  background: "rgba(246, 248, 252, 0.92)",
-                  border: "1px solid rgba(142, 156, 184, 0.34)",
-                  color: "#31405C",
-                }}
-              >
-                <MicrosoftIcon />
-                Continue with Microsoft
-              </button>
+            {/* OAuth buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <OAuthButton icon={<GoogleIcon />} label="Continue with Google" onClick={handleGoogleSignUp} />
+              <OAuthButton icon={<MicrosoftIcon />} label="Continue with Microsoft" onClick={handleMicrosoftSignUp} />
             </div>
 
-            <p
-              style={{
-                textAlign: "center",
-                margin: 0,
-                fontSize: 14,
-                color: "var(--text-secondary)",
-              }}
-            >
+            {/* Footer links */}
+            <p style={{ textAlign: "center", margin: 0, fontSize: 14, color: "#6B7A99" }}>
               Already have an account?{" "}
-              <Link href="/login" style={{ color: "var(--blue-400)", fontWeight: 600 }}>
+              <Link href="/login" style={{ color: "#7B6CF6", fontWeight: 600, textDecoration: "none" }}>
                 Sign in
               </Link>
             </p>
 
-            <p
-              style={{
-                textAlign: "center",
-                margin: 0,
-                fontSize: 12,
-                color: "var(--text-tertiary)",
-                lineHeight: 1.6,
-              }}
-            >
+            <p style={{ textAlign: "center", margin: 0, fontSize: 12, color: "#9BA3B8", lineHeight: 1.6 }}>
               By continuing, you agree to CitaCal&apos;s{" "}
-              <Link href="/terms" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
-                Terms
-              </Link>{" "}
+              <Link href="/terms" style={{ color: "#7B6CF6", fontWeight: 500, textDecoration: "none" }}>Terms</Link>{" "}
               and{" "}
-              <Link href="/privacy" style={{ color: "var(--blue-400)", fontWeight: 500 }}>
-                Privacy Statement
-              </Link>
-              .
+              <Link href="/privacy" style={{ color: "#7B6CF6", fontWeight: 500, textDecoration: "none" }}>Privacy Policy</Link>.
             </p>
           </div>
         </div>
-      </main>
+      </div>
     </div>
+  );
+}
+
+function OAuthButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+        width: "100%", height: 48, borderRadius: 12,
+        background: hovered ? "#fafbff" : "#ffffff",
+        border: `1px solid ${hovered ? "rgba(123,108,246,0.30)" : "rgba(0,0,0,0.11)"}`,
+        color: "#171C33", fontSize: 14, fontWeight: 600,
+        cursor: "pointer", fontFamily: "var(--font-sans)",
+        boxShadow: hovered
+          ? "0 4px 12px rgba(123,108,246,0.12)"
+          : "0 1px 3px rgba(0,0,0,0.06)",
+        transition: "all 0.15s ease",
+      }}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

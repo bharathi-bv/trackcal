@@ -256,18 +256,33 @@ export default function ThreeDaySlotPicker({
   const [preferredMinimumHostCount, setPreferredMinimumHostCount] = React.useState<number | null>(null);
 
   const fetchedDaysRef = React.useRef<Set<string>>(new Set());
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const hasAutoScrolled = React.useRef(false);
 
   React.useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
 
+  // On mount: scroll current time to the vertical center of the viewport
+  React.useEffect(() => {
+    if (!scrollRef.current || hasAutoScrolled.current) return;
+    hasAutoScrolled.current = true;
+    const nowM = new Date().getHours() * 60 + new Date().getMinutes();
+    const ROW_H = Math.max(20, Math.round((HOUR_HEIGHT * slot_increment) / 60));
+    const totalH = (24 * 60 / slot_increment) * ROW_H;
+    const nowPx = (nowM / (24 * 60)) * totalH;
+    const viewportH = scrollRef.current.clientHeight || 400;
+    scrollRef.current.scrollTop = Math.max(0, nowPx - viewportH / 2);
+  }, [slot_increment]);
+
   const ROW_HEIGHT = Math.max(20, Math.round((HOUR_HEIGHT * slot_increment) / 60));
   const rowsPerDuration = Math.max(1, Math.round(duration / slot_increment));
 
+  // Always show full 24h grid; available slots are a subset — rest shows as hatched
   const allRows = React.useMemo(
-    () => buildRows(start_hour, end_hour, slot_increment),
-    [start_hour, end_hour, slot_increment]
+    () => buildRows(0, 24, slot_increment),
+    [slot_increment]
   );
 
   const days = React.useMemo(() => getDays(anchorDate, count), [anchorDate, count]);
@@ -399,13 +414,11 @@ export default function ThreeDaySlotPicker({
   const selectedRowIdx =
     selectedTime ? allRows.findIndex((r) => r.timeStr === selectedTime) : -1;
 
-  // Current-time line position
+  // Current-time line position — full 24h grid so position = fraction of 1440 mins
   const totalGridHeight = allRows.length * ROW_HEIGHT;
-  const startMins = start_hour * 60;
-  const endMins = end_hour * 60;
   const nowMins = now.getHours() * 60 + now.getMinutes();
-  const currentTimeTop = ((nowMins - startMins) / (endMins - startMins)) * totalGridHeight;
-  const showCurrentTime = nowMins > startMins && nowMins < endMins;
+  const currentTimeTop = (nowMins / (24 * 60)) * totalGridHeight;
+  const showCurrentTime = true; // always within 24h grid
 
   // Reference date for time index conversion (use first visible day for consistency)
   const refDateISO = days[0] ?? todayISO;
@@ -479,7 +492,8 @@ export default function ThreeDaySlotPicker({
 
         {/* ── Slot grid (headers sticky inside scroll container so columns always align) ── */}
         <div
-          style={{ overflowY: "auto", maxHeight: 380 }}
+          ref={scrollRef}
+          style={{ overflowY: "auto", maxHeight: 420 }}
           onMouseLeave={() => setHover(null)}
         >
           {/* Sticky day headers — inside the scroll container to prevent scrollbar offset misalignment */}
@@ -676,8 +690,8 @@ export default function ThreeDaySlotPicker({
                       interval.end,
                       day,
                       hostTimezone,
-                      start_hour,
-                      end_hour,
+                      0,
+                      24,
                       allRows,
                       ROW_HEIGHT
                     );

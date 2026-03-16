@@ -358,7 +358,7 @@ async function refreshHostMicrosoftAccessToken(refreshToken: string) {
   };
 }
 
-async function getValidHostMicrosoftAccessToken() {
+export async function getValidHostMicrosoftAccessToken() {
   const tokens = await getHostMicrosoftTokens();
   const expiryMs = tokens.expiry ? Number(tokens.expiry) : 0;
   if (tokens.access_token && expiryMs > Date.now() + TOKEN_REFRESH_LEEWAY_MS) {

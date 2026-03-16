@@ -36,7 +36,7 @@ export default async function PublicBookingPageShell({
       .maybeSingle(),
     db
       .from("event_types")
-      .select("id, name, slug, is_active, duration, description, start_hour, end_hour, slot_increment, custom_questions")
+      .select("id, name, slug, is_active, duration, description, start_hour, end_hour, slot_increment, custom_questions, custom_css")
       .eq("slug", normalizedEventSlug)
       .maybeSingle(),
   ]);
@@ -58,7 +58,7 @@ export default async function PublicBookingPageShell({
   if (!eventType && process.env.NODE_ENV !== "production") {
     const fallbackEvent = await db
       .from("event_types")
-      .select("id, name, slug, is_active, duration, description, start_hour, end_hour, slot_increment, custom_questions")
+      .select("id, name, slug, is_active, duration, description, start_hour, end_hour, slot_increment, custom_questions, custom_css")
       .eq("slug", normalizedEventSlug)
       .maybeSingle();
     eventType = fallbackEvent.data ?? null;
@@ -125,11 +125,18 @@ export default async function PublicBookingPageShell({
   const customQuestions: CustomQuestion[] = Array.isArray(eventType?.custom_questions)
     ? (eventType.custom_questions as CustomQuestion[])
     : [];
+  const eventCustomCss =
+    typeof (eventType as { custom_css?: string | null } | null)?.custom_css === "string"
+      ? (eventType as { custom_css?: string | null }).custom_css ?? ""
+      : "";
 
   return (
     <>
       {bookingLinkHeaderCode.trim().length > 0 ? (
         <div dangerouslySetInnerHTML={{ __html: bookingLinkHeaderCode }} />
+      ) : null}
+      {eventCustomCss.trim().length > 0 ? (
+        <style dangerouslySetInnerHTML={{ __html: eventCustomCss }} />
       ) : null}
       <main
         className="min-h-screen flex items-center justify-center px-4 py-10"

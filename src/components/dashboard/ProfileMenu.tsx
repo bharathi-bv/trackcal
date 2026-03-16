@@ -22,11 +22,17 @@ export default function ProfileMenu({ email }: { email: string }) {
 
   // Fetch profile photo once on mount
   React.useEffect(() => {
-    fetch("/api/settings")
+    fetch("/api/settings", { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
-        if (typeof data?.profile_photo_url === "string" && data.profile_photo_url) {
-          setPhotoUrl(data.profile_photo_url);
+        const nextPhotoUrl =
+          typeof data?.settings?.profile_photo_url === "string"
+            ? data.settings.profile_photo_url
+            : typeof data?.profile_photo_url === "string"
+              ? data.profile_photo_url
+              : null;
+        if (nextPhotoUrl) {
+          setPhotoUrl(nextPhotoUrl);
         }
       })
       .catch(() => {/* silent — fallback to silhouette */});

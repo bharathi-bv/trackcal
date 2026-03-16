@@ -77,6 +77,7 @@ const eventTypeSchema = z.object({
   collective_show_availability_tiers: z.boolean().optional().default(false),
   collective_min_available_hosts: z.number().int().min(1).max(1000).optional().nullable(),
   utm_links: z.array(utmLinkSchema).optional().default([]),
+  custom_css: z.string().max(20000).optional().nullable(),
   custom_questions: z.array(z.any()).optional().default([]),
 });
 
@@ -268,6 +269,7 @@ export async function POST(request: NextRequest) {
     collective_show_availability_tiers: parsed.data.collective_show_availability_tiers,
     collective_min_available_hosts: parsed.data.collective_min_available_hosts || null,
     utm_links: normalizeUtmLinks(parsed.data.utm_links ?? []),
+    custom_css: parsed.data.custom_css?.trim() || null,
     custom_questions: parsed.data.custom_questions ?? [],
   };
 

@@ -656,7 +656,7 @@ function LeftPanel({
     <img
       src={hostPhotoUrl!}
       alt={displayName}
-      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+      style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }}
       onError={() => setImgError(true)}
     />
   ) : hostName ? (
@@ -1681,7 +1681,7 @@ export default function BookingWizard({
                             <img
                               src={host.photo_url}
                               alt={host.name}
-                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }}
                             />
                           ) : (
                             host.name.charAt(0).toUpperCase()

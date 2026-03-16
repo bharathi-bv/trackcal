@@ -13,7 +13,6 @@ import {
   type AvailabilityBlockers,
   type WeeklyAvailability,
 } from "@/lib/event-type-config";
-import AvailabilitySchedulesPanel from "@/components/dashboard/AvailabilitySchedulesPanel";
 import WeeklyAvailabilityEditor from "@/components/dashboard/WeeklyAvailabilityEditor";
 import {
   buildPublicBookingPath,
@@ -21,7 +20,6 @@ import {
   shouldUseBookPathPrefix,
 } from "@/lib/public-booking-links";
 import type {
-  CollectiveSlotTier,
   TeamAvailabilityMember,
   TeamAvailabilitySlotMeta,
   TeamSchedulingMode,
@@ -69,6 +67,7 @@ export type EventType = {
   collective_show_availability_tiers: boolean;
   collective_min_available_hosts: number | null;
   utm_links: UtmLinkPreset[];
+  custom_css: string | null;
   custom_questions: CustomQuestion[];
 };
 
@@ -123,6 +122,7 @@ type FormState = {
   collective_required_member_ids: string[];
   collective_show_availability_tiers: boolean;
   collective_min_available_hosts: number;
+  custom_css: string;
   custom_questions: CustomQuestion[];
 };
 
@@ -159,6 +159,7 @@ const DEFAULT_FORM: FormState = {
   collective_required_member_ids: [],
   collective_show_availability_tiers: false,
   collective_min_available_hosts: 0,
+  custom_css: "",
   custom_questions: [],
 };
 
@@ -178,12 +179,13 @@ const DAYS: Array<{ key: string; label: string }> = [
   { key: "6", label: "Sat" },
 ];
 
-type SectionKey = "basics" | "location" | "scheduling" | "availability" | "team" | "questions";
+type SectionKey = "basics" | "location" | "scheduling" | "availability" | "appearance" | "team" | "questions";
 const SECTION_TABS: Array<{ key: SectionKey; label: string }> = [
   { key: "basics",       label: "Details"      },
   { key: "location",     label: "Location"     },
   { key: "scheduling",   label: "Timing"       },
   { key: "availability", label: "Schedule"     },
+  { key: "appearance",   label: "Appearance"   },
   { key: "team",         label: "Team"         },
   { key: "questions",    label: "Questions"    },
 ];
@@ -209,7 +211,7 @@ type AvailabilityDiagnostic = {
   fallbackMinimumHostCount: number | null;
 };
 
-type SchedulingView = "meeting_links" | "availability";
+type SchedulingView = "meeting_links" | "appearance";
 
 const UTM_FIELDS: Array<{ key: keyof Omit<UtmLinkPreset, "id" | "description">; label: string; placeholder: string }> = [
   { key: "utm_source", label: "UTM source", placeholder: "linkedin" },
@@ -271,6 +273,7 @@ function normalizeEventTypeForClient(et: EventType): EventType {
       : [],
     team_scheduling_mode: et.team_scheduling_mode ?? "round_robin",
     utm_links: normalizeUtmLinks(et.utm_links),
+    custom_css: typeof et.custom_css === "string" ? et.custom_css : "",
     custom_questions: Array.isArray(et.custom_questions) ? et.custom_questions : [],
   };
 }
@@ -288,12 +291,6 @@ function buildUtmLink(
     if (value) url.searchParams.set(field.key, value);
   });
   return url.toString();
-}
-
-function tierLabel(tier: CollectiveSlotTier | null) {
-  if (tier === "preferred") return "Preferred";
-  if (tier === "other") return "Also available";
-  return "Available";
 }
 
 function formatAvailabilityReason(reason: string | null) {
@@ -610,9 +607,7 @@ export default function EventTypesClient({
   const [eventTypes, setEventTypes] = useState<EventType[]>(() =>
     initialEventTypes.map((et) => normalizeEventTypeForClient(et))
   );
-  const [availabilitySchedules, setAvailabilitySchedules] = useState<AvailabilitySchedule[]>(
-    initialAvailabilitySchedules
-  );
+  const [availabilitySchedules] = useState<AvailabilitySchedule[]>(initialAvailabilitySchedules);
   const [editingFullPage, setEditingFullPage] = useState(false);
   const [meetingLinksTab, setMeetingLinksTab] = useState<"personal" | "team">("personal");
   const [previewDate, setPreviewDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
@@ -632,22 +627,22 @@ export default function EventTypesClient({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [viewMode, setViewMode] = useState<SchedulingView>("meeting_links");
+  const [appearanceDrafts, setAppearanceDrafts] = useState<Record<string, string>>({});
+  const [savingAppearanceFor, setSavingAppearanceFor] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SectionKey>("basics");
-  const [diagnosticDate, setDiagnosticDate] = useState<string>(() =>
-    new Date().toISOString().slice(0, 10)
-  );
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
-  const [diagnostic, setDiagnostic] = useState<AvailabilityDiagnostic | null>(null);
   const [expandedUtmSections, setExpandedUtmSections] = useState<Record<string, boolean>>({});
   const [utmEditor, setUtmEditor] = useState<Record<string, UtmLinkPreset | null>>({});
   const [editingUtmId, setEditingUtmId] = useState<Record<string, string | null>>({});
   const [savingUtmFor, setSavingUtmFor] = useState<string | null>(null);
+  const [activeUtmSuggestionField, setActiveUtmSuggestionField] = useState<string | null>(null);
   const drawerScrollRef = useRef<HTMLDivElement | null>(null);
   const sectionRefs = useRef<Record<SectionKey, HTMLElement | null>>({
     basics: null,
     location: null,
     scheduling: null,
     availability: null,
+    appearance: null,
     team: null,
     questions: null,
   });
@@ -660,12 +655,55 @@ export default function EventTypesClient({
     availabilitySchedules.find((schedule) => schedule.is_default)?.id ??
     availabilitySchedules[0]?.id ??
     "";
-  const scheduleUsageCounts = availabilitySchedules.reduce<Record<string, number>>((acc, schedule) => {
-    acc[schedule.id] = eventTypes.filter(
-      (eventType) => eventType.availability_schedule_id === schedule.id && eventType.weekly_availability === null
-    ).length;
+  const utmSuggestionsByField = UTM_FIELDS.reduce((acc, field) => {
+    acc[field.key] = Array.from(
+      new Set(
+        eventTypes
+          .flatMap((eventType) => eventType.utm_links)
+          .map((preset) => preset[field.key].trim())
+          .filter((value) => value.length > 0)
+      )
+    ).sort((a, b) => a.localeCompare(b));
     return acc;
-  }, {});
+  }, {} as Record<keyof Omit<UtmLinkPreset, "id" | "description">, string[]>);
+
+  function getAppearanceDraft(et: EventType) {
+    return appearanceDrafts[et.id] ?? et.custom_css ?? "";
+  }
+
+  function updateAppearanceDraft(eventTypeId: string, value: string) {
+    setAppearanceDrafts((prev) => ({ ...prev, [eventTypeId]: value }));
+  }
+
+  function getUtmSuggestionFieldKey(eventTypeId: string, fieldKey: keyof Omit<UtmLinkPreset, "id" | "description">) {
+    return `${eventTypeId}:${fieldKey}`;
+  }
+
+  async function saveAppearance(et: EventType) {
+    setSavingAppearanceFor(et.id);
+    const res = await fetch(`/api/event-types/${et.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ custom_css: getAppearanceDraft(et) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSavingAppearanceFor(null);
+
+    if (!res.ok) {
+      toast.error((data as { error?: string }).error || "Failed to save custom CSS");
+      return;
+    }
+
+    setEventTypes((prev) =>
+      prev.map((eventType) =>
+        eventType.id === et.id
+          ? ({ ...eventType, ...data, custom_css: typeof data.custom_css === "string" ? data.custom_css : "" } as EventType)
+          : eventType
+      )
+    );
+    setAppearanceDrafts((prev) => ({ ...prev, [et.id]: typeof data.custom_css === "string" ? data.custom_css : "" }));
+    toast.success("Custom CSS saved");
+  }
 
   function openCreate() {
     setEditing(null);
@@ -676,8 +714,6 @@ export default function EventTypesClient({
       blocked_weekdays: [...DEFAULT_AVAILABILITY_BLOCKERS.weekdays],
     });
     setFormErrors({});
-    setDiagnosticDate(new Date().toISOString().slice(0, 10));
-    setDiagnostic(null);
     setPreviewDate(new Date().toISOString().slice(0, 10));
     setPreviewSlots(null);
     setPreviewDiagnostic(null);
@@ -723,11 +759,10 @@ export default function EventTypesClient({
       collective_required_member_ids: et.collective_required_member_ids ?? [],
       collective_show_availability_tiers: et.collective_show_availability_tiers ?? false,
       collective_min_available_hosts: et.collective_min_available_hosts ?? 0,
+      custom_css: et.custom_css ?? "",
       custom_questions: Array.isArray(et.custom_questions) ? et.custom_questions : [],
     });
     setFormErrors({});
-    setDiagnosticDate(new Date().toISOString().slice(0, 10));
-    setDiagnostic(null);
     setPreviewDate(new Date().toISOString().slice(0, 10));
     setPreviewSlots(null);
     setPreviewDiagnostic(null);
@@ -774,10 +809,10 @@ export default function EventTypesClient({
       collective_required_member_ids: et.collective_required_member_ids ?? [],
       collective_show_availability_tiers: et.collective_show_availability_tiers ?? false,
       collective_min_available_hosts: et.collective_min_available_hosts ?? 0,
+      custom_css: et.custom_css ?? "",
+      custom_questions: Array.isArray(et.custom_questions) ? et.custom_questions : [],
     });
     setFormErrors({});
-    setDiagnosticDate(new Date().toISOString().slice(0, 10));
-    setDiagnostic(null);
     setPreviewDate(new Date().toISOString().slice(0, 10));
     setPreviewSlots(null);
     setPreviewDiagnostic(null);
@@ -1097,7 +1132,6 @@ export default function EventTypesClient({
     setPreviewSlots(null);
     setPreviewDiagnostic(null);
     setPreviewDiagnosticSlot(null);
-    setDiagnostic(null);
   }
 
   async function fetchPreviewSlots(date: string) {
@@ -1106,7 +1140,6 @@ export default function EventTypesClient({
     setPreviewLoading(true);
     setPreviewSlots(null);
     setPreviewDiagnostic(null);
-    setDiagnostic(null);
     const shouldUseLocalPreview = !editing || (editing && slug !== editing.slug);
     if (shouldUseLocalPreview) {
       const local = computeLocalPreviewSlots(date);
@@ -1154,12 +1187,10 @@ export default function EventTypesClient({
         preferredMinimumHostCount: null,
         fallbackMinimumHostCount: null,
       };
-      setDiagnostic(diag);
       setPreviewDiagnostic(diag);
       return;
     }
     setDiagnosticLoading(true);
-    setDiagnostic(null);
     setPreviewDiagnostic(null);
     try {
       const res = await fetch(`/api/availability?date=${encodeURIComponent(date)}&event=${encodeURIComponent(slug)}&details=1`);
@@ -1180,11 +1211,9 @@ export default function EventTypesClient({
         preferredMinimumHostCount: typeof data.preferredMinimumHostCount === "number" ? data.preferredMinimumHostCount : null,
         fallbackMinimumHostCount: data.fallbackMinimumHostCount ?? null,
       };
-      setDiagnostic(diag);
       setPreviewDiagnostic(diag);
     } catch {
       const diag: AvailabilityDiagnostic = { date, slotCount: null, reason: null, error: "Failed to fetch diagnostics.", hostTimezone: null, slotMeta: [], selectedMembers: [], availabilityTiersEnabled: false, preferredMinimumHostCount: null, fallbackMinimumHostCount: null };
-      setDiagnostic(diag);
       setPreviewDiagnostic(diag);
     } finally {
       setDiagnosticLoading(false);
@@ -1350,75 +1379,6 @@ export default function EventTypesClient({
     setTimeout(() => setEmbedCopied(null), 1800);
   }
 
-  async function runAvailabilityDiagnostic() {
-    if (!diagnosticDate) return;
-    const slug = (form.slug || "").trim();
-    if (!slug) {
-      setDiagnostic({
-        date: diagnosticDate,
-        slotCount: null,
-        reason: "event_not_found",
-        error: "Set a slug first.",
-        hostTimezone: null,
-        slotMeta: [],
-        selectedMembers: [],
-        availabilityTiersEnabled: false,
-        preferredMinimumHostCount: null,
-        fallbackMinimumHostCount: null,
-      });
-      return;
-    }
-
-    setDiagnosticLoading(true);
-    setDiagnostic(null);
-    try {
-      const res = await fetch(
-        `/api/availability?date=${encodeURIComponent(diagnosticDate)}&event=${encodeURIComponent(slug)}&details=1`
-      );
-      const data = (await res.json()) as {
-        slots?: string[] | null;
-        reason?: string;
-        error?: string;
-        hostTimezone?: string;
-        slotMeta?: TeamAvailabilitySlotMeta[];
-        selectedMembers?: TeamAvailabilityMember[];
-        availabilityTiersEnabled?: boolean;
-        preferredMinimumHostCount?: number;
-        fallbackMinimumHostCount?: number | null;
-      };
-      setDiagnostic({
-        date: diagnosticDate,
-        slotCount: Array.isArray(data.slots) ? data.slots.length : null,
-        reason: typeof data.reason === "string" ? data.reason : null,
-        error: typeof data.error === "string" ? data.error : null,
-        hostTimezone: data.hostTimezone ?? null,
-        slotMeta: data.slotMeta ?? [],
-        selectedMembers: data.selectedMembers ?? [],
-        availabilityTiersEnabled: data.availabilityTiersEnabled ?? false,
-        preferredMinimumHostCount:
-          typeof data.preferredMinimumHostCount === "number"
-            ? data.preferredMinimumHostCount
-            : null,
-        fallbackMinimumHostCount: data.fallbackMinimumHostCount ?? null,
-      });
-    } catch {
-      setDiagnostic({
-        date: diagnosticDate,
-        slotCount: null,
-        reason: null,
-        error: "Failed to fetch diagnostics.",
-        hostTimezone: null,
-        slotMeta: [],
-        selectedMembers: [],
-        availabilityTiersEnabled: false,
-        preferredMinimumHostCount: null,
-        fallbackMinimumHostCount: null,
-      });
-    } finally {
-      setDiagnosticLoading(false);
-    }
-  }
-
   const filteredEventTypes = eventTypes.filter((et) => {
     const q = query.trim().toLowerCase();
     const matchesQuery =
@@ -1480,7 +1440,7 @@ export default function EventTypesClient({
             Booking Links
           </h1>
           <p style={{ fontSize: 13, color: "var(--text-tertiary)", marginTop: "var(--space-1)", fontWeight: 500 }}>
-            Create shareable booking links and reusable availability schedules.
+            Create shareable booking links and customize how each booking page looks.
           </p>
         </div>
         {viewMode === "meeting_links" && (
@@ -1491,8 +1451,8 @@ export default function EventTypesClient({
       </div>
 
       <div style={{ display: "flex", borderBottom: "2px solid var(--border-default)", marginBottom: "var(--space-6)" }}>
-        {(["meeting_links", "availability"] as const).map((mode) => {
-          const label = mode === "meeting_links" ? "Booking Links" : "Availability";
+        {(["meeting_links", "appearance"] as const).map((mode) => {
+          const label = mode === "meeting_links" ? "Booking Links" : "Appearance";
           const isActive = viewMode === mode;
           return (
             <button
@@ -1518,12 +1478,59 @@ export default function EventTypesClient({
         })}
       </div>
 
-      {viewMode === "availability" ? (
-        <AvailabilitySchedulesPanel
-          schedules={availabilitySchedules}
-          usageCounts={scheduleUsageCounts}
-          onSchedulesChange={setAvailabilitySchedules}
-        />
+      {viewMode === "appearance" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+          <div className="tc-card" style={{ padding: "var(--space-5) var(--space-6)" }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+              Custom CSS by booking link
+            </h2>
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)", margin: "6px 0 0", lineHeight: 1.6 }}>
+              Add CSS that applies only to a specific booking page. Availability stays in the separate Availability page.
+            </p>
+          </div>
+
+          {eventTypes.length === 0 ? (
+            <div className="tc-card" style={{ padding: "var(--space-12)", textAlign: "center" }}>
+              <p style={{ fontSize: 14, color: "var(--text-tertiary)", margin: 0 }}>
+                Create a booking link first, then customize its appearance here.
+              </p>
+            </div>
+          ) : (
+            eventTypes.map((et) => (
+              <div key={et.id} className="tc-card" style={{ padding: "var(--space-5) var(--space-6)", display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-4)", flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>{et.name}</span>
+                      <code style={{ fontSize: 11, color: "var(--text-tertiary)", background: "var(--surface-subtle)", padding: "2px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-subtle)" }}>
+                        {buildPublicBookingPath(hostPublicSlug, et.slug, usesBookPrefix)}
+                      </code>
+                    </div>
+                    <p style={{ fontSize: 12, color: "var(--text-tertiary)", margin: "6px 0 0", lineHeight: 1.5 }}>
+                      CSS entered here is injected only on this booking link&apos;s public page.
+                    </p>
+                  </div>
+                  <button
+                    className="tc-btn tc-btn--primary tc-btn--sm"
+                    onClick={() => saveAppearance(et)}
+                    disabled={savingAppearanceFor === et.id}
+                  >
+                    {savingAppearanceFor === et.id ? "Saving..." : "Save CSS"}
+                  </button>
+                </div>
+
+                <textarea
+                  className="tc-input tc-textarea"
+                  rows={12}
+                  placeholder=".citacal-booking-card { border-radius: 28px; }"
+                  value={getAppearanceDraft(et)}
+                  onChange={(e) => updateAppearanceDraft(et.id, e.target.value)}
+                  style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 12, lineHeight: 1.6 }}
+                />
+              </div>
+            ))
+          )}
+        </div>
       ) : (
         <>
         {viewMode === "meeting_links" && (
@@ -1908,14 +1915,88 @@ export default function EventTypesClient({
                           }}
                         >
                           {UTM_FIELDS.map((field) => (
-                            <div key={field.key} className="tc-form-field" style={{ marginBottom: 0 }}>
+                            <div
+                              key={field.key}
+                              className="tc-form-field"
+                              style={{ marginBottom: 0, position: "relative" }}
+                            >
                               <label className="tc-form-label">{field.label}</label>
+                              {(() => {
+                                const fieldStateKey = getUtmSuggestionFieldKey(et.id, field.key);
+                                const inputValue = utmEditor[et.id]?.[field.key] ?? "";
+                                const normalizedInput = inputValue.trim().toLowerCase();
+                                const suggestions = utmSuggestionsByField[field.key].filter((value) => {
+                                  if (!normalizedInput) return true;
+                                  return value.toLowerCase().includes(normalizedInput);
+                                });
+                                const showSuggestions =
+                                  activeUtmSuggestionField === fieldStateKey && suggestions.length > 0;
+
+                                return (
+                                  <>
                               <input
                                 className="tc-input"
                                 placeholder={field.placeholder}
-                                value={utmEditor[et.id]?.[field.key] ?? ""}
+                                value={inputValue}
+                                onFocus={() => setActiveUtmSuggestionField(fieldStateKey)}
+                                onBlur={() => {
+                                  window.setTimeout(() => {
+                                    setActiveUtmSuggestionField((current) =>
+                                      current === fieldStateKey ? null : current
+                                    );
+                                  }, 120);
+                                }}
                                 onChange={(e) => updateUtmEditorField(et.id, field.key, e.target.value)}
                               />
+                                    {showSuggestions ? (
+                                      <div
+                                        style={{
+                                          position: "absolute",
+                                          top: "calc(100% + 6px)",
+                                          left: 0,
+                                          right: 0,
+                                          zIndex: 20,
+                                          borderRadius: "var(--radius-md)",
+                                          border: "1px solid var(--border-default)",
+                                          background: "var(--surface-page)",
+                                          boxShadow: "var(--shadow-lg)",
+                                          padding: "6px",
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          maxHeight: 180,
+                                          overflowY: "auto",
+                                        }}
+                                      >
+                                        {suggestions.slice(0, 8).map((value) => (
+                                          <button
+                                            key={value}
+                                            type="button"
+                                            onMouseDown={(e) => {
+                                              e.preventDefault();
+                                              updateUtmEditorField(et.id, field.key, value);
+                                              setActiveUtmSuggestionField(null);
+                                            }}
+                                            style={{
+                                              width: "100%",
+                                              textAlign: "left",
+                                              padding: "8px 10px",
+                                              borderRadius: "var(--radius-sm)",
+                                              border: "none",
+                                              background: "transparent",
+                                              color: "var(--text-primary)",
+                                              fontSize: 13,
+                                              cursor: "pointer",
+                                            }}
+                                          >
+                                            {value}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    ) : null}
+                                  </>
+                                );
+                              })()}
                             </div>
                           ))}
                         </div>
@@ -2260,7 +2341,7 @@ export default function EventTypesClient({
                         onChange={(e) => updateForm("availability_schedule_id", e.target.value)}
                       >
                         {availabilitySchedules.length === 0 && (
-                          <option value="">No schedules found — create one in Availability tab</option>
+                          <option value="">No schedules found — create one in Availability page</option>
                         )}
                         {availabilitySchedules.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -2308,6 +2389,29 @@ export default function EventTypesClient({
                   )}
                 </>
               )}
+              </section>
+
+              {/* ── APPEARANCE ── */}
+              <section ref={(el) => { sectionRefs.current.appearance = el; }} style={{ scrollMarginTop: 120, display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+                <h3 style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--color-text-secondary)", margin: 0, whiteSpace: "nowrap", textTransform: "uppercase" }}>Appearance</h3>
+                <div style={{ flex: 1, height: 1, background: "var(--border-default)" }} />
+              </div>
+
+              <div className="tc-form-field">
+                <label className="tc-form-label">Custom CSS</label>
+                <textarea
+                  className="tc-input tc-textarea"
+                  rows={10}
+                  placeholder=".citacal-booking-card { border-radius: 28px; }"
+                  value={form.custom_css}
+                  onChange={(e) => updateForm("custom_css", e.target.value)}
+                  style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 12, lineHeight: 1.6 }}
+                />
+                <p className="tc-form-hint">
+                  Applied only to this booking link&apos;s page. Use CSS selectors to restyle the booking experience for this one event.
+                </p>
+              </div>
               </section>
 
               {/* ── TEAM ── */}
@@ -2712,7 +2816,6 @@ export default function EventTypesClient({
                     fetchPreviewSlots(date);
                     setPreviewDiagnostic(null);
                     setPreviewDiagnosticSlot(null);
-                    setDiagnostic(null);
                   }}
                 />
 
@@ -2816,7 +2919,7 @@ export default function EventTypesClient({
                     </div>
                     <button
                       type="button"
-                      onClick={() => { setPreviewDiagnostic(null); setDiagnostic(null); setPreviewDiagnosticSlot(null); }}
+                      onClick={() => { setPreviewDiagnostic(null); setPreviewDiagnosticSlot(null); }}
                       style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "var(--text-tertiary)", lineHeight: 1, flexShrink: 0 }}
                     >×</button>
                   </div>

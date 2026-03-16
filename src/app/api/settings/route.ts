@@ -20,7 +20,7 @@ const settingsSchema = z.object({
   host_name: z.string().trim().max(120).optional().nullable(),
   public_slug: z.string().trim().max(48).optional().nullable(),
   // Allow full URLs, data: URIs (file-upload base64), or empty string
-  profile_photo_url: z.string().trim().max(500000).optional().or(z.literal("")).nullable(),
+  profile_photo_url: z.string().trim().max(5_000_000).optional().or(z.literal("")).nullable(),
   booking_base_url: z.string().trim().url().optional().or(z.literal("")).nullable(),
   weekly_availability: z.record(z.string(), z.any()).optional().nullable(),
   webhook_urls: z.array(z.string().url()).optional().nullable(),

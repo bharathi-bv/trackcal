@@ -81,6 +81,7 @@ const patchSchema = z
     collective_show_availability_tiers: z.boolean().optional(),
     collective_min_available_hosts: z.number().int().min(1).max(1000).nullable().optional(),
     utm_links: z.array(utmLinkSchema).optional(),
+    custom_css: z.string().max(20000).nullable().optional(),
     custom_questions: z.array(z.any()).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, "No fields provided to update");
@@ -322,6 +323,10 @@ export async function PATCH(
       utm_links:
         parsed.data.utm_links !== undefined
           ? normalizeUtmLinks(parsed.data.utm_links)
+          : undefined,
+      custom_css:
+        parsed.data.custom_css !== undefined
+          ? parsed.data.custom_css?.trim() || null
           : undefined,
     })
     .eq("id", id)

@@ -143,7 +143,7 @@ function Avatar({
         <img
           src={hostPhotoUrl}
           alt={displayName}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }}
           onError={() => setImgError(true)}
         />
       ) : (

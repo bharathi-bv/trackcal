@@ -1,9 +1,12 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { MultiCalendarState } from "@/lib/calendar-connections";
 import type { AvailabilitySchedule } from "@/lib/availability-schedules";
+import TimezonePicker from "@/components/booking/TimezonePicker";
+import { DateOverrideModal, TimePicker, type DateOverrideLocal, formatHourShort as formatHourShortShared } from "@/components/dashboard/DateOverrideModal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -19,50 +22,102 @@ const DAYS: { key: DayKey; label: string; short: string }[] = [
   { key: "sun", label: "Sunday", short: "Sun" },
 ];
 
+// DB stores weekly_availability with numeric keys "0"=Sunday … "6"=Saturday.
+const DAY_TO_NUM: Record<DayKey, string> = {
+  sun: "0", mon: "1", tue: "2", wed: "3", thu: "4", fri: "5", sat: "6",
+};
+
+type DayCfg = { enabled?: boolean; start_hour?: number; end_hour?: number; ranges?: { start_hour: number; end_hour: number }[] };
+
+function getDayConfig(wa: Record<string, DayCfg>, key: DayKey): DayCfg | undefined {
+  return wa[key] ?? wa[DAY_TO_NUM[key]];
+}
+
 type TimeRange = { start_hour: number; end_hour: number };
-type EditRange = { id: string; start_hour: number; end_hour: number; days: DayKey[] };
 
-const DEFAULT_RANGES: EditRange[] = [
-  { id: "default", start_hour: 9, end_hour: 17, days: ["mon", "tue", "wed", "thu", "fri"] },
-];
+// Per-day edit model (Calendly-style)
+type DayEdit = {
+  key: DayKey;
+  enabled: boolean;
+  ranges: { id: string; start_hour: number; end_hour: number }[];
+};
 
-function formatHour(h: number): string {
-  if (h === 0) return "12am";
-  if (h === 12) return "12pm";
-  if (h < 12) return `${h}am`;
-  return `${h - 12}pm`;
+// DateOverrideLocal is imported from shared DateOverrideModal.tsx
+
+type ScheduleWithUsage = AvailabilitySchedule & { usage_count?: number };
+
+function normalizeDateOverridesFromSchedule(raw: unknown): DateOverrideLocal[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as Array<{ date: string; ranges: { start_hour: number; end_hour: number }[] }>)
+    .filter((item) => item && typeof item.date === "string" && Array.isArray(item.ranges))
+    .map((item) => ({
+      date: item.date,
+      ranges: item.ranges.map((r, i) => ({
+        id: `${item.date}-${i}-${r.start_hour}`,
+        start_hour: r.start_hour ?? 9,
+        end_hour: r.end_hour ?? 17,
+      })),
+    }))
+    .filter((o) => o.ranges.length > 0);
 }
 
-function scheduleSummary(schedule: AvailabilitySchedule): string {
-  const wa = schedule.weekly_availability as Record<string, { enabled?: boolean; start_hour?: number; end_hour?: number; ranges?: { start_hour: number; end_hour: number }[] }>;
-  const enabledDays = DAYS.filter((d) => wa[d.key]?.enabled);
-  if (enabledDays.length === 0) return "No days available";
-  const hours = enabledDays[0];
-  const dayConfig = wa[hours.key];
-  const startH = dayConfig?.ranges?.[0]?.start_hour ?? dayConfig?.start_hour ?? 9;
-  const endH = dayConfig?.ranges?.[0]?.end_hour ?? dayConfig?.end_hour ?? 17;
-  const dayLabels = enabledDays.map((d) => d.short).join(", ");
-  return `${dayLabels} · ${formatHour(startH)}–${formatHour(endH)}`;
-}
-
-function getEditRanges(schedule: AvailabilitySchedule): EditRange[] {
-  const wa = schedule.weekly_availability as Record<string, { enabled?: boolean; start_hour?: number; end_hour?: number; ranges?: TimeRange[] }>;
-  // Group per-day ranges by their times
-  const map = new Map<string, EditRange>();
-  DAYS.forEach((d) => {
-    const cfg = wa[d.key];
-    if (!cfg?.enabled) return;
-    const dayRanges = cfg.ranges?.length ? cfg.ranges : [{ start_hour: cfg.start_hour ?? 9, end_hour: cfg.end_hour ?? 17 }];
-    dayRanges.forEach((r) => {
-      const key = `${r.start_hour}-${r.end_hour}`;
-      if (map.has(key)) {
-        map.get(key)!.days.push(d.key);
-      } else {
-        map.set(key, { id: key, start_hour: r.start_hour, end_hour: r.end_hour, days: [d.key] });
-      }
+function formatOverrideDate(dateStr: string): string {
+  try {
+    return new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", {
+      weekday: "short", month: "short", day: "numeric",
     });
+  } catch {
+    return dateStr;
+  }
+}
+
+function defaultDayEdit(): DayEdit[] {
+  return DAYS.map((d) => ({
+    key: d.key,
+    enabled: ["mon", "tue", "wed", "thu", "fri"].includes(d.key),
+    ranges: [{ id: `${d.key}-0`, start_hour: 9, end_hour: 17 }],
+  }));
+}
+
+function scheduleToEditDays(s: AvailabilitySchedule): DayEdit[] {
+  const wa = s.weekly_availability as Record<string, DayCfg>;
+  return DAYS.map((d) => {
+    const cfg = getDayConfig(wa, d.key);
+    const enabled = isDayEnabled(cfg);
+    const rawRanges = cfg?.ranges?.length
+      ? cfg.ranges
+      : cfg?.start_hour !== undefined
+        ? [{ start_hour: cfg.start_hour, end_hour: cfg.end_hour ?? 17 }]
+        : [{ start_hour: 9, end_hour: 17 }];
+    return {
+      key: d.key,
+      enabled,
+      ranges: enabled
+        ? rawRanges.map((r, i) => ({ id: `${d.key}-${i}-${r.start_hour}`, start_hour: r.start_hour, end_hour: r.end_hour }))
+        : [{ id: `${d.key}-0`, start_hour: 9, end_hour: 17 }],
+    };
   });
-  return map.size > 0 ? Array.from(map.values()) : [...DEFAULT_RANGES];
+}
+
+function dayEditToPerDay(days: DayEdit[]): Record<string, { enabled: boolean; ranges: TimeRange[] }> {
+  const perDay: Record<string, { enabled: boolean; ranges: TimeRange[] }> = {};
+  for (let i = 0; i <= 6; i++) { perDay[String(i)] = { enabled: false, ranges: [] }; }
+  days.forEach((d) => {
+    const numKey = DAY_TO_NUM[d.key];
+    perDay[numKey].enabled = d.enabled;
+    if (d.enabled) {
+      perDay[numKey].ranges = d.ranges.map((r) => ({ start_hour: r.start_hour, end_hour: r.end_hour }));
+    }
+  });
+  return perDay;
+}
+
+const formatHourShort = formatHourShortShared;
+
+function isDayEnabled(cfg: DayCfg | undefined): boolean {
+  if (!cfg) return false;
+  if ("enabled" in cfg) return Boolean(cfg.enabled);
+  return cfg.start_hour !== undefined || (cfg.ranges !== undefined && cfg.ranges.length > 0);
 }
 
 // ── Calendar icons ─────────────────────────────────────────────────────────────
@@ -70,16 +125,11 @@ function getEditRanges(schedule: AvailabilitySchedule): EditRange[] {
 function GoogleCalIcon({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* White background */}
       <rect x="5" y="5" width="38" height="38" rx="4" fill="white" stroke="#DADCE0" strokeWidth="1.5"/>
-      {/* Blue header */}
       <path d="M5 9a4 4 0 014-4h30a4 4 0 014 4v8H5V9z" fill="#1a73e8"/>
-      {/* Ring binders */}
       <rect x="15" y="2" width="4" height="9" rx="2" fill="#1a73e8"/>
       <rect x="29" y="2" width="4" height="9" rx="2" fill="#1a73e8"/>
-      {/* "31" */}
       <text x="24" y="37" textAnchor="middle" fontSize="15" fontWeight="700" fill="#1a73e8" fontFamily="sans-serif">31</text>
-      {/* Google color dots */}
       <circle cx="14" cy="28" r="2.5" fill="#EA4335"/>
       <circle cx="24" cy="28" r="2.5" fill="#4285F4"/>
       <circle cx="34" cy="28" r="2.5" fill="#34A853"/>
@@ -90,17 +140,12 @@ function GoogleCalIcon({ size = 28 }: { size?: number }) {
 function OutlookIcon({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-      {/* Blue background */}
       <rect x="4" y="4" width="40" height="40" rx="7" fill="#0078D4"/>
-      {/* White envelope/calendar body */}
       <rect x="14" y="13" width="20" height="22" rx="3" fill="white" opacity="0.15"/>
-      {/* White calendar header */}
       <rect x="14" y="13" width="20" height="8" rx="3" fill="white" opacity="0.95"/>
       <rect x="14" y="17" width="20" height="4" fill="white" opacity="0.95"/>
-      {/* Binders */}
       <rect x="19" y="10" width="3" height="7" rx="1.5" fill="white"/>
       <rect x="26" y="10" width="3" height="7" rx="1.5" fill="white"/>
-      {/* Calendar grid */}
       <rect x="16" y="25" width="5" height="4" rx="1" fill="white" opacity="0.8"/>
       <rect x="23" y="25" width="5" height="4" rx="1" fill="white" opacity="0.8"/>
       <rect x="16" y="31" width="5" height="3" rx="1" fill="white" opacity="0.6"/>
@@ -167,9 +212,18 @@ export default function AvailabilityClient({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const defaultTab = searchParams.get("tab") === "calendar" ? "calendar" : "schedules";
+  const requestedTab = searchParams.get("tab");
+  const defaultTab = requestedTab === "calendar" ? "calendar" : "schedules";
   const [tab, setTab] = React.useState<"schedules" | "calendar">(defaultTab);
   const [toast, setToast] = React.useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [accounts, setAccounts] = React.useState(initialCalendar.accounts);
+  const [timezone, setTimezone] = React.useState(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; }
+  });
+  // Track which schedule to preview in calendar (defaults to default schedule)
+  const [selectedScheduleId, setSelectedScheduleId] = React.useState<string | null>(
+    () => initialSchedules.find((s) => s.is_default)?.id ?? initialSchedules[0]?.id ?? null
+  );
 
   React.useEffect(() => {
     const connected = searchParams.get("calendar_connected");
@@ -199,48 +253,90 @@ export default function AvailabilityClient({
     router.replace(`/app/availability?${params.toString()}`, { scroll: false });
   }
 
+  const selectedSchedule = initialSchedules.find((s) => s.id === selectedScheduleId) ?? initialSchedules.find((s) => s.is_default) ?? initialSchedules[0];
+
   return (
-    <div style={{ maxWidth: 720 }}>
-      {/* Page header */}
-      <div style={{ marginBottom: "var(--space-6)" }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>
-          Availability
-        </h1>
-        <p style={{ fontSize: 14, color: "var(--color-text-muted)", marginTop: 4 }}>
-          Manage your working hours and connected calendars.
-        </p>
+    <div
+      style={{
+        display: "flex",
+        gap: 20,
+        alignItems: "start",
+      }}
+    >
+      {/* Left column: header, tabs, tab content */}
+      <div style={{ flex: "1 1 0%", minWidth: 0, maxWidth: 980 }}>
+        {/* Header */}
+        <div style={{ marginBottom: "var(--space-6)" }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>Availability</h1>
+          <p style={{ fontSize: 14, color: "var(--color-text-muted)", marginTop: 4 }}>Manage your working hours and connected calendars.</p>
+        </div>
+
+        {/* Tab bar */}
+        <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", marginBottom: "var(--space-8)", gap: 0 }}>
+          {([
+            { key: "schedules", label: "Schedules" },
+            { key: "calendar", label: "Calendar settings" },
+          ] as const).map((item) => (
+            <button
+              key={item.key}
+              onClick={() => switchTab(item.key)}
+              style={{
+                background: "none",
+                border: "none",
+                padding: "10px 18px",
+                fontSize: 14,
+                fontWeight: tab === item.key ? 600 : 500,
+                color: tab === item.key ? "var(--color-primary)" : "var(--color-text-muted)",
+                borderBottom: tab === item.key ? "2px solid var(--color-primary)" : "2px solid transparent",
+                marginBottom: -1,
+                cursor: "pointer",
+                fontFamily: "var(--font-sans)",
+                transition: "color 0.12s",
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        {tab === "schedules" ? (
+          <>
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 0, marginBottom: 16 }}>
+              The working hours of the selected schedule are shown in the calendar preview.
+            </p>
+            <SchedulesTab
+              initialSchedules={initialSchedules}
+              selectedId={selectedScheduleId}
+              onSelect={setSelectedScheduleId}
+            />
+          </>
+        ) : tab === "calendar" ? (
+          <CalendarTab accounts={accounts} setAccounts={setAccounts} onRefresh={() => router.refresh()} />
+        ) : null}
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: "flex", borderBottom: "1px solid var(--border-subtle)", marginBottom: "var(--space-8)", gap: 0 }}>
-        {(["schedules", "calendar"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => switchTab(t)}
-            style={{
-              background: "none",
-              border: "none",
-              padding: "10px 18px",
-              fontSize: 14,
-              fontWeight: tab === t ? 600 : 500,
-              color: tab === t ? "var(--color-primary)" : "var(--color-text-muted)",
-              borderBottom: tab === t ? "2px solid var(--color-primary)" : "2px solid transparent",
-              marginBottom: -1,
-              cursor: "pointer",
-              fontFamily: "var(--font-sans)",
-              transition: "color 0.12s",
-            }}
-          >
-            {t === "schedules" ? "Schedules" : "Calendar settings"}
-          </button>
-        ))}
+      {/* Right column: sticky calendar — top offset accounts for nav bar height (62px) + page padding (24px) */}
+      <div style={{
+        flex: "0 0 620px",
+        minWidth: 620,
+        maxWidth: 620,
+        alignSelf: "flex-start",
+        marginTop: 92,
+        border: "1px solid var(--border-subtle)",
+        borderRadius: "var(--radius-lg)",
+        overflow: "hidden",
+        background: "var(--color-surface)",
+        position: "sticky",
+        top: 24,
+      }}>
+        <WeeklyCalendarView
+          accounts={accounts}
+          timezone={timezone}
+          onTimezoneChange={setTimezone}
+          selectedSchedule={selectedSchedule}
+        />
       </div>
-
-      {tab === "schedules" ? (
-        <SchedulesTab initialSchedules={initialSchedules} />
-      ) : (
-        <CalendarTab initial={initialCalendar} onRefresh={() => router.refresh()} />
-      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
@@ -251,22 +347,42 @@ export default function AvailabilityClient({
 // SCHEDULES TAB
 // ══════════════════════════════════════════════════════════════════════════════
 
-function SchedulesTab({ initialSchedules }: { initialSchedules: AvailabilitySchedule[] }) {
+function SchedulesTab({
+  initialSchedules,
+  selectedId,
+  onSelect,
+}: {
+  initialSchedules: AvailabilitySchedule[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
   const router = useRouter();
-  const [schedules, setSchedules] = React.useState(initialSchedules);
+  const [schedules, setSchedules] = React.useState<ScheduleWithUsage[]>(initialSchedules);
   const [editingId, setEditingId] = React.useState<string | "new" | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Edit form state
+  // Edit form state — Calendly-style per-day
   const [editName, setEditName] = React.useState("");
-  const [editRanges, setEditRanges] = React.useState<EditRange[]>(DEFAULT_RANGES);
+  const [editDays, setEditDays] = React.useState<DayEdit[]>(defaultDayEdit());
+  const [editDateOverrides, setEditDateOverrides] = React.useState<DateOverrideLocal[]>([]);
   const [editIsDefault, setEditIsDefault] = React.useState(false);
+
+  // Fetch usage counts from API on mount
+  React.useEffect(() => {
+    fetch("/api/availability-schedules")
+      .then((r) => r.json())
+      .then((data: { schedules?: ScheduleWithUsage[] }) => {
+        if (data.schedules) setSchedules(data.schedules);
+      })
+      .catch(() => {});
+  }, []);
 
   function startNew() {
     setEditingId("new");
     setEditName("Working hours");
-    setEditRanges([{ id: "r1", start_hour: 9, end_hour: 17, days: ["mon", "tue", "wed", "thu", "fri"] }]);
+    setEditDays(defaultDayEdit());
+    setEditDateOverrides([]);
     setEditIsDefault(schedules.length === 0);
     setError(null);
   }
@@ -274,7 +390,8 @@ function SchedulesTab({ initialSchedules }: { initialSchedules: AvailabilitySche
   function startEdit(s: AvailabilitySchedule) {
     setEditingId(s.id);
     setEditName(s.name);
-    setEditRanges(getEditRanges(s));
+    setEditDays(scheduleToEditDays(s));
+    setEditDateOverrides(normalizeDateOverridesFromSchedule(s.date_overrides));
     setEditIsDefault(s.is_default);
     setError(null);
   }
@@ -315,28 +432,29 @@ function SchedulesTab({ initialSchedules }: { initialSchedules: AvailabilitySche
   async function handleSave() {
     setSaving(true);
     setError(null);
-    const perDay: Record<string, { enabled: boolean; ranges: TimeRange[] }> = {};
-    DAYS.forEach((d) => { perDay[d.key] = { enabled: false, ranges: [] }; });
-    editRanges.forEach((r) => {
-      r.days.forEach((day) => {
-        perDay[day].enabled = true;
-        perDay[day].ranges.push({ start_hour: r.start_hour, end_hour: r.end_hour });
-      });
-    });
-    const weekly_availability = perDay;
+    const weekly_availability = dayEditToPerDay(editDays);
     try {
       let res: Response;
+      const body = {
+        name: editName.trim(),
+        weekly_availability,
+        is_default: editIsDefault,
+        date_overrides: editDateOverrides.map((o) => ({
+          date: o.date,
+          ranges: o.ranges.map(({ start_hour, end_hour }) => ({ start_hour, end_hour })),
+        })),
+      };
       if (editingId === "new") {
         res = await fetch("/api/availability-schedules", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: editName.trim(), weekly_availability, is_default: editIsDefault }),
+          body: JSON.stringify(body),
         });
       } else {
         res = await fetch(`/api/availability-schedules/${editingId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: editName.trim(), weekly_availability, is_default: editIsDefault }),
+          body: JSON.stringify(body),
         });
       }
       const data = await res.json();
@@ -352,10 +470,8 @@ function SchedulesTab({ initialSchedules }: { initialSchedules: AvailabilitySche
     }
   }
 
-  const HOUR_OPTIONS = Array.from({ length: 25 }, (_, i) => i);
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
       {schedules.length === 0 && editingId !== "new" && (
         <div style={{ textAlign: "center", padding: "var(--space-10) 0", color: "var(--color-text-muted)", fontSize: 14 }}>
           No schedules yet. Create one to define your working hours.
@@ -363,81 +479,92 @@ function SchedulesTab({ initialSchedules }: { initialSchedules: AvailabilitySche
       )}
 
       {/* Schedule cards */}
-      {schedules.map((s) => (
-        <div key={s.id}>
-          <div
-            style={{
-              border: "1px solid var(--border-subtle)",
-              borderRadius: "var(--radius-lg)",
-              padding: "var(--space-4) var(--space-5)",
-              background: "var(--color-surface)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "var(--space-4)",
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>{s.name}</span>
-                {s.is_default && (
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-primary)", background: "var(--color-primary-light)", borderRadius: 4, padding: "2px 7px" }}>
-                    Default
-                  </span>
+      {schedules.map((s) => {
+        const isSelected = selectedId === s.id;
+        return (
+          <div key={s.id}>
+            <div
+              onClick={() => editingId === null && onSelect(s.id)}
+              style={{
+                border: "1px solid var(--border-subtle)",
+                borderLeft: isSelected ? "3px solid var(--color-primary)" : "1px solid var(--border-subtle)",
+                borderRadius: "var(--radius-lg)",
+                padding: isSelected ? "var(--space-4) var(--space-5) var(--space-4) calc(var(--space-5) - 2px)" : "var(--space-4) var(--space-5)",
+                background: isSelected ? "rgba(74,158,255,0.03)" : "var(--color-surface)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "var(--space-4)",
+                cursor: editingId === null ? "pointer" : "default",
+                transition: "border-color 0.12s, background 0.12s",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>{s.name}</span>
+                  {s.is_default && (
+                    <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-primary)", background: "var(--color-primary-light)", borderRadius: 4, padding: "2px 7px" }}>
+                      Default
+                    </span>
+                  )}
+                </div>
+                {(s.usage_count ?? 0) > 0 && (
+                  <div style={{ fontSize: 11, color: "var(--color-primary)", marginTop: 3 }}>
+                    Active on {s.usage_count} booking link{s.usage_count !== 1 ? "s" : ""}
+                  </div>
                 )}
               </div>
-              <div style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 2 }}>
-                {scheduleSummary(s)}
+              <div style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                {!s.is_default && (
+                  <button
+                    onClick={() => handleSetDefault(s.id)}
+                    style={{ ...ghostBtn, fontSize: 12 }}
+                  >
+                    Set default
+                  </button>
+                )}
+                <button onClick={() => startEdit(s)} style={ghostBtn}>Edit</button>
+                {schedules.length > 1 && (
+                  <button onClick={() => handleDelete(s.id)} style={{ ...ghostBtn, color: "#dc2626" }}>Delete</button>
+                )}
               </div>
             </div>
-            <div style={{ display: "flex", gap: "var(--space-2)", flexShrink: 0 }}>
-              {!s.is_default && (
-                <button
-                  onClick={() => handleSetDefault(s.id)}
-                  style={{ ...ghostBtn, fontSize: 12 }}
-                >
-                  Set default
-                </button>
-              )}
-              <button onClick={() => startEdit(s)} style={ghostBtn}>Edit</button>
-              {schedules.length > 1 && (
-                <button onClick={() => handleDelete(s.id)} style={{ ...ghostBtn, color: "#dc2626" }}>Delete</button>
-              )}
-            </div>
-          </div>
 
-          {/* Inline edit panel */}
-          {editingId === s.id && (
-            <ScheduleEditPanel
-              name={editName}
-              ranges={editRanges}
-              isDefault={editIsDefault}
-              canUnsetDefault={!s.is_default}
-              saving={saving}
-              error={error}
-              hourOptions={HOUR_OPTIONS}
-              onNameChange={setEditName}
-              onRangesChange={setEditRanges}
-              onIsDefaultChange={setEditIsDefault}
-              onSave={handleSave}
-              onCancel={cancelEdit}
-            />
-          )}
-        </div>
-      ))}
+            {/* Inline edit panel */}
+            {editingId === s.id && (
+              <ScheduleEditPanel
+                name={editName}
+                days={editDays}
+                dateOverrides={editDateOverrides}
+                isDefault={editIsDefault}
+                canUnsetDefault={!s.is_default}
+                saving={saving}
+                error={error}
+                onNameChange={setEditName}
+                onDaysChange={setEditDays}
+                onDateOverridesChange={setEditDateOverrides}
+                onIsDefaultChange={setEditIsDefault}
+                onSave={handleSave}
+                onCancel={cancelEdit}
+              />
+            )}
+          </div>
+        );
+      })}
 
       {/* New schedule form */}
       {editingId === "new" && (
         <ScheduleEditPanel
           name={editName}
-          ranges={editRanges}
+          days={editDays}
+          dateOverrides={editDateOverrides}
           isDefault={editIsDefault}
           canUnsetDefault={false}
           saving={saving}
           error={error}
-          hourOptions={HOUR_OPTIONS}
           onNameChange={setEditName}
-          onRangesChange={setEditRanges}
+          onDaysChange={setEditDays}
+          onDateOverridesChange={setEditDateOverrides}
           onIsDefaultChange={setEditIsDefault}
           onSave={handleSave}
           onCancel={cancelEdit}
@@ -453,45 +580,102 @@ function SchedulesTab({ initialSchedules }: { initialSchedules: AvailabilitySche
   );
 }
 
+// ── Schedule edit panel — Calendly-style per-day rows ──────────────────────────
+
 function ScheduleEditPanel({
-  name, ranges, isDefault, canUnsetDefault, saving, error, hourOptions,
-  onNameChange, onRangesChange, onIsDefaultChange, onSave, onCancel,
+  name, days, dateOverrides, isDefault, canUnsetDefault, saving, error,
+  onNameChange, onDaysChange, onDateOverridesChange, onIsDefaultChange, onSave, onCancel,
 }: {
   name: string;
-  ranges: EditRange[];
+  days: DayEdit[];
+  dateOverrides: DateOverrideLocal[];
   isDefault: boolean;
   canUnsetDefault: boolean;
   saving: boolean;
   error: string | null;
-  hourOptions: number[];
   onNameChange: (v: string) => void;
-  onRangesChange: (v: EditRange[]) => void;
+  onDaysChange: (v: DayEdit[]) => void;
+  onDateOverridesChange: (v: DateOverrideLocal[]) => void;
   onIsDefaultChange: (v: boolean) => void;
   onSave: () => void;
   onCancel: () => void;
 }) {
-  function addRange() {
-    const id = `r${Date.now()}`;
-    onRangesChange([...ranges, { id, start_hour: 9, end_hour: 17, days: [] }]);
+  // 15-min increment options: 0, 0.25, 0.5, … 23.75 for start; 0.25 … 24 for end
+  const [showOverrideModal, setShowOverrideModal] = React.useState(false);
+  const [editingOverrideDate, setEditingOverrideDate] = React.useState<string | null>(null);
+
+  function toggleDay(key: DayKey) {
+    onDaysChange(days.map((d) =>
+      d.key !== key ? d : {
+        ...d,
+        enabled: !d.enabled,
+        ranges: d.ranges.length ? d.ranges : [{ id: `${key}-0`, start_hour: 9, end_hour: 17 }],
+      }
+    ));
   }
 
-  function removeRange(id: string) {
-    onRangesChange(ranges.filter((r) => r.id !== id));
+  function addRange(key: DayKey) {
+    onDaysChange(days.map((d) =>
+      d.key !== key ? d : {
+        ...d,
+        enabled: true,
+        ranges: [...d.ranges, { id: `${key}-${Date.now()}`, start_hour: 9, end_hour: 17 }],
+      }
+    ));
   }
 
-  function updateRange(id: string, patch: Partial<EditRange>) {
-    onRangesChange(ranges.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  function removeRange(key: DayKey, rangeId: string) {
+    onDaysChange(days.map((d) => {
+      if (d.key !== key) return d;
+      const remaining = d.ranges.filter((r) => r.id !== rangeId);
+      return { ...d, ranges: remaining.length ? remaining : [{ id: `${key}-0`, start_hour: 9, end_hour: 17 }], enabled: remaining.length > 0 };
+    }));
   }
 
-  function toggleDay(rangeId: string, day: DayKey) {
-    const range = ranges.find((r) => r.id === rangeId)!;
-    const days = range.days.includes(day)
-      ? range.days.filter((d) => d !== day)
-      : [...range.days, day];
-    updateRange(rangeId, { days });
+  function updateRange(key: DayKey, rangeId: string, patch: { start_hour?: number; end_hour?: number }) {
+    onDaysChange(days.map((d) =>
+      d.key !== key ? d : {
+        ...d,
+        ranges: d.ranges.map((r) => r.id === rangeId ? { ...r, ...patch } : r),
+      }
+    ));
   }
+
+  function copyToAll(key: DayKey) {
+    const src = days.find((d) => d.key === key);
+    if (!src) return;
+    onDaysChange(days.map((d) =>
+      d.key === key ? d : {
+        ...d,
+        enabled: src.enabled,
+        ranges: src.ranges.map((r, i) => ({ ...r, id: `${d.key}-copy-${i}` })),
+      }
+    ));
+  }
+
+  function removeOverride(date: string) {
+    onDateOverridesChange(dateOverrides.filter((o) => o.date !== date));
+  }
+
+  function handleApplyOverride(incoming: DateOverrideLocal[]) {
+    const merged = [...dateOverrides];
+    for (const inc of incoming) {
+      const idx = merged.findIndex((o) => o.date === inc.date);
+      if (idx >= 0) merged[idx] = inc;
+      else merged.push(inc);
+    }
+    merged.sort((a, b) => a.date.localeCompare(b.date));
+    onDateOverridesChange(merged);
+    setShowOverrideModal(false);
+    setEditingOverrideDate(null);
+  }
+
+  const editingOverride = editingOverrideDate
+    ? dateOverrides.find((o) => o.date === editingOverrideDate) ?? null
+    : null;
 
   return (
+    <>
     <div style={{
       border: "1px solid var(--color-primary)", borderRadius: "var(--radius-lg)",
       padding: "var(--space-5)", background: "var(--color-surface)", marginTop: "var(--space-2)",
@@ -502,78 +686,146 @@ function ScheduleEditPanel({
         <input value={name} onChange={(e) => onNameChange(e.target.value)} style={inputStyle} placeholder="e.g. Working hours" />
       </div>
 
-      {/* Ranges */}
+      {/* Per-day rows */}
       <div style={{ marginBottom: "var(--space-5)" }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "var(--space-3)" }}>Working hours</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
-          {ranges.map((range) => (
-            <div key={range.id} style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", padding: "12px 14px", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", background: "var(--color-surface-subtle)" }}>
-              {/* Time selects */}
-              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-                <div className="tc-select-wrap" style={{ minWidth: 96 }}>
-                  <select
-                    value={range.start_hour}
-                    onChange={(e) => updateRange(range.id, { start_hour: Number(e.target.value) })}
-                    className="tc-input"
-                    style={{ fontSize: 13, padding: "4px 28px 4px 8px", height: 34 }}
-                  >
-                    {hourOptions.slice(0, 24).map((h) => (
-                      <option key={h} value={h}>{formatHour(h)}</option>
-                    ))}
-                  </select>
-                </div>
-                <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>to</span>
-                <div className="tc-select-wrap" style={{ minWidth: 96 }}>
-                  <select
-                    value={range.end_hour}
-                    onChange={(e) => updateRange(range.id, { end_hour: Number(e.target.value) })}
-                    className="tc-input"
-                    style={{ fontSize: 13, padding: "4px 28px 4px 8px", height: 34 }}
-                  >
-                    {hourOptions.slice(1).map((h) => (
-                      <option key={h} value={h} disabled={h <= range.start_hour}>{formatHour(h)}</option>
-                    ))}
-                  </select>
-                </div>
-                <div style={{ flex: 1 }} />
-                {ranges.length > 1 && (
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "var(--space-3)" }}>Weekly hours</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          {DAYS.map((d, di) => {
+            const dayEdit = days.find((de) => de.key === d.key)!;
+            return (
+              <div key={d.key} style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                padding: "10px 0",
+                borderTop: di === 0 ? "1px solid var(--border-subtle)" : "none",
+                borderBottom: "1px solid var(--border-subtle)",
+              }}>
+                {/* Toggle + day label */}
+                <div style={{ width: 72, display: "flex", alignItems: "center", gap: 8, paddingTop: 6, flexShrink: 0 }}>
                   <button
-                    onClick={() => removeRange(range.id)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 18, lineHeight: 1, padding: 2 }}
-                  >×</button>
-                )}
+                    onClick={() => toggleDay(d.key)}
+                    style={{
+                      width: 32, height: 18, borderRadius: 9,
+                      border: "none",
+                      background: dayEdit.enabled ? "var(--color-primary)" : "#d1d5db",
+                      cursor: "pointer",
+                      position: "relative",
+                      transition: "background 0.15s",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span style={{
+                      position: "absolute",
+                      top: 2, left: dayEdit.enabled ? 14 : 2,
+                      width: 14, height: 14, borderRadius: "50%",
+                      background: "white",
+                      transition: "left 0.15s",
+                    }} />
+                  </button>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{d.short}</span>
+                </div>
+
+                {/* Ranges or unavailable */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {!dayEdit.enabled ? (
+                    <span style={{ fontSize: 13, color: "var(--color-text-muted)", lineHeight: "32px" }}>Unavailable</span>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {dayEdit.ranges.map((range, rangeIdx) => {
+                        const isLast = rangeIdx === dayEdit.ranges.length - 1;
+                        const endBeforeStart = range.end_hour <= range.start_hour;
+                        return (
+                          <div key={range.id} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                              <div style={{ display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0, flexShrink: 0 }}>
+                                <TimePicker
+                                  value={range.start_hour}
+                                  onChange={(v) => updateRange(d.key, range.id, { start_hour: v })}
+                                />
+                                <span style={{ fontSize: 13, color: "var(--color-text-muted)", paddingTop: 8, flexShrink: 0 }}>–</span>
+                                <TimePicker
+                                  value={range.end_hour}
+                                  onChange={(v) => updateRange(d.key, range.id, { end_hour: v })}
+                                  minFh={range.start_hour}
+                                  isEndTime
+                                />
+                              </div>
+                              {/* × always shown; + and copy on last range */}
+                              <div style={{ display: "flex", alignItems: "center", gap: 4, paddingTop: 3, flexShrink: 0 }}>
+                                <button
+                                  onClick={() => removeRange(d.key, range.id)}
+                                  title="Remove range"
+                                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 16, width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", flexShrink: 0 }}
+                                >×</button>
+                                {isLast && (
+                                  <>
+                                    <button
+                                      onClick={() => addRange(d.key)}
+                                      title="Add time range"
+                                      style={{ background: "none", border: "1px solid var(--border-subtle)", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 16, lineHeight: 1, width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", flexShrink: 0 }}
+                                    >+</button>
+                                    <button
+                                      onClick={() => copyToAll(d.key)}
+                                      title="Copy to all days"
+                                      style={{ background: "none", border: "1px solid var(--border-subtle)", cursor: "pointer", color: "var(--color-text-muted)", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, flexShrink: 0 }}
+                                    >
+                                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M3 11V3h8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            {endBeforeStart && (
+                              <div style={{ fontSize: 11, color: "#9ca3af", paddingLeft: 1 }}>
+                                End time must be after start time
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
-              {/* Day toggles */}
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {DAYS.map((d) => {
-                  const active = range.days.includes(d.key);
-                  return (
-                    <button
-                      key={d.key}
-                      onClick={() => toggleDay(range.id, d.key)}
-                      style={{
-                        width: 34, height: 28, borderRadius: "var(--radius-sm)",
-                        border: `1px solid ${active ? "var(--color-primary)" : "var(--border-subtle)"}`,
-                        background: active ? "var(--color-primary)" : "var(--color-surface)",
-                        color: active ? "white" : "var(--color-text-muted)",
-                        fontSize: 11, fontWeight: 600, cursor: "pointer",
-                        fontFamily: "var(--font-sans)", transition: "all 0.12s",
-                      }}
-                    >
-                      {d.short.slice(0, 2)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-        <button
-          onClick={addRange}
-          style={{ marginTop: "var(--space-2)", background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-primary)", fontFamily: "var(--font-sans)", padding: 0, fontWeight: 500 }}
-        >
-          + Add time range
-        </button>
+      </div>
+
+      {/* Date-specific availability */}
+      <div style={{ marginBottom: "var(--space-5)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Date-specific availability</div>
+          <button
+            onClick={() => { setEditingOverrideDate(null); setShowOverrideModal(true); }}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, color: "var(--color-primary)", fontFamily: "var(--font-sans)", fontWeight: 500, padding: 0 }}
+          >
+            + Add hours
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: dateOverrides.length ? 10 : 0 }}>
+          Override your weekly hours for specific dates.
+        </div>
+        {dateOverrides.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {dateOverrides.map((o) => (
+              <div key={o.date} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", background: "var(--color-surface-subtle)" }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)", minWidth: 100 }}>
+                  {formatOverrideDate(o.date)}
+                </span>
+                <span style={{ fontSize: 12, color: "var(--color-text-muted)", flex: 1 }}>
+                  {o.ranges.map((r) => `${formatHourShort(r.start_hour)}–${formatHourShort(r.end_hour)}`).join(", ")}
+                </span>
+                <button
+                  onClick={() => { setEditingOverrideDate(o.date); setShowOverrideModal(true); }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-primary)", fontSize: 12, fontFamily: "var(--font-sans)", padding: "2px 4px" }}
+                >Edit</button>
+                <button onClick={() => removeOverride(o.date)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 16, lineHeight: 1, padding: "2px 4px" }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Default toggle */}
@@ -596,20 +848,33 @@ function ScheduleEditPanel({
         <button onClick={onCancel} disabled={saving} style={ghostBtn}>Cancel</button>
       </div>
     </div>
+
+    {showOverrideModal && (
+      <DateOverrideModal
+        initialOverrides={editingOverride ? [editingOverride] : []}
+        onApply={handleApplyOverride}
+        onClose={() => { setShowOverrideModal(false); setEditingOverrideDate(null); }}
+      />
+    )}
+    </>
   );
 }
+
+// ── Date Override Modal ────────────────────────────────────────────────────────
+// DateOverrideModal is imported from ./DateOverrideModal
+
 
 // ── Color palette for calendar accounts ───────────────────────────────────────
 
 const ACCOUNT_COLORS = [
-  "#4a9eff", // blue
-  "#7c3aed", // purple
-  "#059669", // green
-  "#d97706", // amber
-  "#dc2626", // red
-  "#0891b2", // teal
-  "#db2777", // pink
-  "#ea580c", // orange
+  "#4a9eff",
+  "#7c3aed",
+  "#059669",
+  "#d97706",
+  "#dc2626",
+  "#0891b2",
+  "#db2777",
+  "#ea580c",
 ];
 
 function getMonday(d: Date): Date {
@@ -625,12 +890,30 @@ function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function getHourInTZ(date: Date, tz: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric", minute: "numeric", hour12: false, timeZone: tz,
+    }).formatToParts(date);
+    const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0") % 24;
+    const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+    return h + m / 60;
+  } catch {
+    return date.getHours() + date.getMinutes() / 60;
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CALENDAR SETTINGS TAB
 // ══════════════════════════════════════════════════════════════════════════════
 
-function CalendarTab({ initial, onRefresh }: { initial: MultiCalendarState; onRefresh: () => void }) {
-  const [accounts, setAccounts] = React.useState(initial.accounts);
+function CalendarTab({
+  accounts, setAccounts, onRefresh,
+}: {
+  accounts: MultiCalendarState["accounts"];
+  setAccounts: React.Dispatch<React.SetStateAction<MultiCalendarState["accounts"]>>;
+  onRefresh: () => void;
+}) {
   const [showConnectMenu, setShowConnectMenu] = React.useState(false);
   const [disconnectingId, setDisconnectingId] = React.useState<string | null>(null);
   const [settingWriteId, setSettingWriteId] = React.useState<string | null>(null);
@@ -726,8 +1009,8 @@ function CalendarTab({ initial, onRefresh }: { initial: MultiCalendarState; onRe
             </div>
           </div>
           <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap", justifyContent: "center" }}>
-            <a href="/api/auth/google?from=integrations" style={providerBtn}><GoogleCalIcon /><span>Google Calendar</span></a>
-            <a href="/api/auth/microsoft?from=integrations" style={providerBtn}><OutlookIcon /><span>Outlook Calendar</span></a>
+            <Link href="/api/auth/google?from=integrations" style={providerBtn}><GoogleCalIcon /><span>Google Calendar</span></Link>
+            <Link href="/api/auth/microsoft?from=integrations" style={providerBtn}><OutlookIcon /><span>Outlook Calendar</span></Link>
           </div>
         </div>
       )}
@@ -737,20 +1020,10 @@ function CalendarTab({ initial, onRefresh }: { initial: MultiCalendarState; onRe
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-5)" }}>
           {/* Accounts row */}
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-3)" }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>Connected calendars</div>
-              <div ref={menuRef} style={{ position: "relative" }}>
-                <button onClick={() => setShowConnectMenu((o) => !o)} style={{ ...outlineBtn, fontSize: 12, padding: "5px 12px" }}>
-                  + Connect calendar
-                </button>
-                {showConnectMenu && (
-                  <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", background: "var(--color-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", boxShadow: "0 8px 24px rgba(0,0,0,0.10)", padding: "var(--space-1)", zIndex: 500, minWidth: 200 }}>
-                    <a href="/api/auth/google?from=integrations" style={menuItemStyle}><GoogleCalIcon size={24} /><span style={{ fontSize: 13 }}>Google Calendar</span></a>
-                    <a href="/api/auth/microsoft?from=integrations" style={menuItemStyle}><OutlookIcon size={24} /><span style={{ fontSize: 13 }}>Outlook Calendar</span></a>
-                  </div>
-                )}
-              </div>
-            </div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "var(--space-2)" }}>Connected calendars</div>
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: "var(--space-3)", marginTop: 0 }}>
+              All connected calendars are checked for busy times to prevent double-bookings.
+            </p>
             <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
               {accounts.map((account, i) => {
                 const color = ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
@@ -758,7 +1031,6 @@ function CalendarTab({ initial, onRefresh }: { initial: MultiCalendarState; onRe
                 return (
                   <div key={account.id} style={{ flex: "0 0 auto", width: 260 }}>
                     <CalendarProviderCard
-                      id={account.id}
                       provider={account.provider}
                       email={account.email}
                       calendars={account.calendars}
@@ -771,12 +1043,40 @@ function CalendarTab({ initial, onRefresh }: { initial: MultiCalendarState; onRe
                   </div>
                 );
               })}
+              {/* Connect button — same width as calendar cards */}
+              <div ref={menuRef} style={{ position: "relative", flex: "0 0 auto", width: 260 }}>
+                <button
+                  onClick={() => setShowConnectMenu((o) => !o)}
+                  style={{
+                    width: "100%",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    padding: "8px 12px",
+                    border: "1px dashed var(--border-subtle)",
+                    borderRadius: "var(--radius-md)",
+                    background: "transparent",
+                    color: "var(--color-text-muted)",
+                    fontSize: 13, fontWeight: 500,
+                    cursor: "pointer", fontFamily: "var(--font-sans)",
+                  }}
+                >
+                  + Connect calendar
+                </button>
+                {showConnectMenu && (
+                  <div style={{ position: "absolute", left: 0, top: "calc(100% + 6px)", background: "var(--color-surface)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", boxShadow: "0 8px 24px rgba(0,0,0,0.10)", padding: "var(--space-1)", zIndex: 500, minWidth: 200 }}>
+                    <Link href="/api/auth/google?from=integrations" style={menuItemStyle}><GoogleCalIcon size={24} /><span style={{ fontSize: 13 }}>Google Calendar</span></Link>
+                    <Link href="/api/auth/microsoft?from=integrations" style={menuItemStyle}><OutlookIcon size={24} /><span style={{ fontSize: 13 }}>Outlook Calendar</span></Link>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Add events to */}
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "var(--space-2)" }}>Add events to</div>
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: "var(--space-3)", marginTop: 0 }}>
+              New bookings will be added to this calendar.
+            </p>
             <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
               {accounts.map((account, i) => {
                 const color = ACCOUNT_COLORS[i % ACCOUNT_COLORS.length];
@@ -803,12 +1103,6 @@ function CalendarTab({ initial, onRefresh }: { initial: MultiCalendarState; onRe
                 );
               })}
             </div>
-            <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 6 }}>New bookings will be added to this calendar.</div>
-          </div>
-
-          {/* Weekly view — full width */}
-          <div style={{ border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-lg)", overflow: "hidden", background: "var(--color-surface)" }}>
-            <WeeklyCalendarView accounts={accounts} />
           </div>
         </div>
       )}
@@ -817,10 +1111,9 @@ function CalendarTab({ initial, onRefresh }: { initial: MultiCalendarState; onRe
 }
 
 function CalendarProviderCard({
-  id: _id, provider, email, calendars, selectedIds, color, disconnecting,
+  provider, email, calendars, selectedIds, color, disconnecting,
   onDisconnect, onSaveIds,
 }: {
-  id: string;
   provider: "google" | "microsoft";
   email: string | null;
   calendars: Array<{ id: string; name: string; isPrimary: boolean }>;
@@ -854,9 +1147,7 @@ function CalendarProviderCard({
       transition: "border-color 0.12s",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px" }}>
-        {/* Color dot */}
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
-        {/* Provider icon (small) */}
         <div style={{ flexShrink: 0, transform: "scale(0.7)", transformOrigin: "left center", width: 22, height: 22 }}>
           {provider === "google" ? <GoogleCalIcon /> : <OutlookIcon />}
         </div>
@@ -882,7 +1173,6 @@ function CalendarProviderCard({
         </button>
       </div>
 
-      {/* Calendar picker */}
       {expanded && calendars.length > 0 && (
         <div style={{ borderTop: `1px solid ${color}30`, padding: "8px 10px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
@@ -914,11 +1204,12 @@ function CalendarProviderCard({
 // WEEKLY CALENDAR VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-const START_HOUR = 7;
-const END_HOUR = 22;
-const PX_PER_HOUR = 32;
-const TOTAL_HEIGHT = (END_HOUR - START_HOUR) * PX_PER_HOUR;
-const TIME_COL_W = 36;
+const START_HOUR = 0;
+const END_HOUR = 24;
+const PX_PER_HOUR = 44;
+const TOTAL_HEIGHT = (END_HOUR - START_HOUR) * PX_PER_HOUR; // 1056
+const TIME_COL_W = 40;
+const CALENDAR_MAX_HEIGHT = 520; // scrollable viewport height
 
 type BusyInterval = { start: string; end: string };
 type AccountBusy = { accountId: string; busy: BusyInterval[] };
@@ -940,16 +1231,38 @@ function assignLanesForDay(dayBlocks: Block[]): LanedBlock[] {
   return laned.map((b) => ({ ...b, totalLanes }));
 }
 
-function WeeklyCalendarView({ accounts }: { accounts: import("@/lib/calendar-connections").MultiCalendarState["accounts"] }) {
+function WeeklyCalendarView({ accounts, timezone, onTimezoneChange, selectedSchedule }: {
+  accounts: import("@/lib/calendar-connections").MultiCalendarState["accounts"];
+  timezone: string;
+  onTimezoneChange: (tz: string) => void;
+  selectedSchedule?: AvailabilitySchedule;
+}) {
   const [weekStart, setWeekStart] = React.useState(() => getMonday(new Date()));
   const [busyData, setBusyData] = React.useState<AccountBusy[]>([]);
   const [loading, setLoading] = React.useState(false);
+  const [now, setNow] = React.useState(() => new Date());
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Tick every minute so the current-time line moves in real time
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
     d.setDate(d.getDate() + i);
     return d;
   });
+
+  // Auto-scroll to show current time centered in viewport
+  React.useEffect(() => {
+    if (!scrollRef.current) return;
+    const nowHour = getHourInTZ(new Date(), timezone);
+    const nowPx = (nowHour - START_HOUR) * PX_PER_HOUR;
+    const scrollTo = Math.max(0, nowPx - CALENDAR_MAX_HEIGHT / 2);
+    scrollRef.current.scrollTop = scrollTo;
+  }, [timezone]);
 
   React.useEffect(() => {
     if (accounts.length === 0) return;
@@ -961,7 +1274,6 @@ function WeeklyCalendarView({ accounts }: { accounts: import("@/lib/calendar-con
       .finally(() => setLoading(false));
   }, [weekStart, accounts.length]);
 
-  // accountId → color map
   const colorMap = React.useMemo(() => {
     const map: Record<string, string> = {};
     accounts.forEach((a, i) => { map[a.id] = ACCOUNT_COLORS[i % ACCOUNT_COLORS.length]; });
@@ -984,8 +1296,8 @@ function WeeklyCalendarView({ accounts }: { accounts: import("@/lib/calendar-con
           const bStart = new Date(Math.max(start.getTime(), dayStart.getTime()));
           const bEnd = new Date(Math.min(end.getTime(), dayEnd.getTime()));
           if (bStart >= bEnd) continue;
-          const sh = bStart.getHours() + bStart.getMinutes() / 60;
-          const eh = bEnd.getHours() + bEnd.getMinutes() / 60;
+          const sh = getHourInTZ(bStart, timezone);
+          const eh = getHourInTZ(bEnd, timezone);
           const cs = Math.max(sh, START_HOUR);
           const ce = Math.min(eh, END_HOUR);
           if (cs >= ce) continue;
@@ -994,7 +1306,7 @@ function WeeklyCalendarView({ accounts }: { accounts: import("@/lib/calendar-con
       }
     }
     return result;
-  }, [busyData, colorMap, weekStart]);
+  }, [busyData, colorMap, weekStart, timezone]);
 
   const lanedBlocks = React.useMemo((): LanedBlock[] => {
     const byDay = new Map<number, Block[]>();
@@ -1011,30 +1323,51 @@ function WeeklyCalendarView({ accounts }: { accounts: import("@/lib/calendar-con
 
   const today = React.useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const nowTop = (() => {
-    const now = new Date();
-    const t = (now.getHours() + now.getMinutes() / 60 - START_HOUR) * PX_PER_HOUR;
+    const nowHour = getHourInTZ(now, timezone);
+    const t = (nowHour - START_HOUR) * PX_PER_HOUR;
     return t >= 0 && t <= TOTAL_HEIGHT ? t : null;
   })();
   const todayIdx = days.findIndex((d) => d.toDateString() === today.toDateString());
 
   const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
   return (
     <div>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: "1px solid var(--border-subtle)" }}>
-        <button
-          onClick={() => setWeekStart((p) => { const d = new Date(p); d.setDate(d.getDate() - 7); return d; })}
-          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 16, lineHeight: 1, padding: "2px 6px" }}
-        >‹</button>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-primary)" }}>
-          {weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })}–{days[6].toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-        </span>
-        <button
-          onClick={() => setWeekStart((p) => { const d = new Date(p); d.setDate(d.getDate() + 7); return d; })}
-          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 16, lineHeight: 1, padding: "2px 6px" }}
-        >›</button>
-      </div>
+      {/* Header with month label + Today button */}
+      {(() => {
+        const sm = weekStart.getMonth(), em = days[6].getMonth();
+        const sy = weekStart.getFullYear(), cy = new Date().getFullYear();
+        const label = sm === em
+          ? `${MONTHS[sm]}${sy !== cy ? " " + sy : ""}`
+          : `${SHORT[sm]} – ${SHORT[em]}${sy !== cy ? " " + sy : ""}`;
+        return (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: "1px solid var(--border-subtle)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => setWeekStart((p) => { const d = new Date(p); d.setDate(d.getDate() - 7); return d; })}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 16, lineHeight: 1, padding: "2px 6px" }}
+              >‹</button>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--color-text-primary)", minWidth: 120, textAlign: "center" }}>{label}</span>
+              <button
+                onClick={() => setWeekStart((p) => { const d = new Date(p); d.setDate(d.getDate() + 7); return d; })}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--color-text-muted)", fontSize: 16, lineHeight: 1, padding: "2px 6px" }}
+              >›</button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <TimezonePicker value={timezone} onChange={onTimezoneChange} />
+              <button
+                onClick={() => setWeekStart(getMonday(new Date()))}
+                style={{ fontSize: 11, fontWeight: 600, color: "var(--color-primary)", background: "var(--color-primary-light, rgba(74,158,255,0.08))", border: "1px solid rgba(74,158,255,0.25)", borderRadius: "var(--radius-sm)", padding: "3px 10px", cursor: "pointer", fontFamily: "var(--font-sans)", whiteSpace: "nowrap" }}
+              >
+                Today
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Day labels */}
       <div style={{ display: "flex", paddingLeft: TIME_COL_W, borderBottom: "1px solid var(--border-subtle)" }}>
@@ -1053,8 +1386,11 @@ function WeeklyCalendarView({ accounts }: { accounts: import("@/lib/calendar-con
         ))}
       </div>
 
-      {/* Time grid */}
-      <div style={{ overflowY: "auto", position: "relative" }}>
+      {/* Scrollable time grid */}
+      <div
+        ref={scrollRef}
+        style={{ overflowY: "auto", maxHeight: CALENDAR_MAX_HEIGHT, position: "relative" }}
+      >
         {loading && (
           <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 20, fontSize: 12, color: "var(--color-text-muted)" }}>
             Loading…
@@ -1063,7 +1399,7 @@ function WeeklyCalendarView({ accounts }: { accounts: import("@/lib/calendar-con
         <div style={{ display: "flex", height: TOTAL_HEIGHT }}>
           {/* Time axis */}
           <div style={{ width: TIME_COL_W, flexShrink: 0, position: "relative" }}>
-            {Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => {
+            {Array.from({ length: END_HOUR - START_HOUR }, (_, i) => {
               const h = START_HOUR + i;
               const label = h === 0 ? "12am" : h < 12 ? `${h}am` : h === 12 ? "12pm" : `${h - 12}pm`;
               return (
@@ -1089,6 +1425,49 @@ function WeeklyCalendarView({ accounts }: { accounts: import("@/lib/calendar-con
                 background: todayIdx === i ? "rgba(74,158,255,0.03)" : "transparent",
               }} />
             ))}
+
+            {/* Availability schedule dim — hours outside working hours (date overrides take precedence) */}
+            {(() => {
+              const DAY_KEYS: DayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+              if (!selectedSchedule) return null;
+              const wa = selectedSchedule.weekly_availability as Record<string, DayCfg>;
+              const dateOverrides = (selectedSchedule.date_overrides ?? []) as { date: string; ranges: { start_hour: number; end_hour: number }[] }[];
+              return DAY_KEYS.map((dk, dayIdx) => {
+                const dimStyle = (top: number, height: number, key: string) => (
+                  <div key={key} style={{ position: "absolute", top, left: `${(dayIdx / 7) * 100}%`, width: `${100 / 7}%`, height, background: "rgba(0,0,0,0.045)", zIndex: 2, pointerEvents: "none" }} />
+                );
+                // Check for a date-specific override for this calendar column
+                const dayISO = toISODate(days[dayIdx]);
+                const override = dateOverrides.find((o) => o.date === dayISO);
+                let ranges: { start_hour: number; end_hour: number }[];
+                if (override) {
+                  // Highlight the override column with a faint blue tint
+                  ranges = override.ranges.length ? override.ranges : [];
+                  if (ranges.length === 0) return dimStyle(0, TOTAL_HEIGHT, `dim-all-${dayIdx}`);
+                } else {
+                  const cfg = getDayConfig(wa, dk);
+                  const enabled = isDayEnabled(cfg);
+                  if (!enabled) return dimStyle(0, TOTAL_HEIGHT, `dim-all-${dayIdx}`);
+                  ranges = cfg!.ranges?.length ? cfg!.ranges : [{ start_hour: cfg!.start_hour ?? 9, end_hour: cfg!.end_hour ?? 17 }];
+                }
+                const sorted = [...ranges].sort((a, b) => a.start_hour - b.start_hour);
+                const overlays: React.ReactNode[] = [];
+                if (override) {
+                  // Faint blue backdrop on override days so they're visually distinct
+                  overlays.push(<div key={`override-bg-${dayIdx}`} style={{ position: "absolute", top: 0, left: `${(dayIdx / 7) * 100}%`, width: `${100 / 7}%`, height: TOTAL_HEIGHT, background: "rgba(74,158,255,0.04)", zIndex: 2, pointerEvents: "none" }} />);
+                }
+                if (sorted[0].start_hour > START_HOUR)
+                  overlays.push(dimStyle(0, (sorted[0].start_hour - START_HOUR) * PX_PER_HOUR, `dim-before-${dayIdx}`));
+                for (let ri = 1; ri < sorted.length; ri++) {
+                  const gS = sorted[ri - 1].end_hour, gE = sorted[ri].start_hour;
+                  if (gE > gS) overlays.push(dimStyle((gS - START_HOUR) * PX_PER_HOUR, (gE - gS) * PX_PER_HOUR, `dim-gap-${dayIdx}-${ri}`));
+                }
+                const last = sorted[sorted.length - 1];
+                if (last.end_hour < END_HOUR)
+                  overlays.push(dimStyle((last.end_hour - START_HOUR) * PX_PER_HOUR, (END_HOUR - last.end_hour) * PX_PER_HOUR, `dim-after-${dayIdx}`));
+                return overlays;
+              });
+            })()}
 
             {/* Busy blocks with lane support */}
             {lanedBlocks.map((b, i) => {
@@ -1217,17 +1596,3 @@ const menuItemStyle: React.CSSProperties = {
   cursor: "pointer",
   fontFamily: "var(--font-sans)",
 };
-
-function writeOptionStyle(active: boolean): React.CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    gap: "var(--space-3)",
-    padding: "var(--space-4) var(--space-5)",
-    border: `1px solid ${active ? "var(--color-primary)" : "var(--border-subtle)"}`,
-    borderRadius: "var(--radius-lg)",
-    background: active ? "var(--color-primary-light)" : "var(--color-surface)",
-    cursor: "pointer",
-    transition: "border-color 0.12s, background 0.12s",
-  };
-}
