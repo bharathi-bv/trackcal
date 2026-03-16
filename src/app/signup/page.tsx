@@ -39,10 +39,19 @@ function SignupContent() {
 
   async function handleGoogleSignUp() {
     if (!isLoaded) return;
+    // Request calendar scopes alongside identity so new users only see one Google consent screen.
+    // claim-calendar will detect the scopes are already granted and skip a second OAuth.
     await signIn.authenticateWithRedirect({
       strategy: "oauth_google",
       redirectUrl: "/sso-callback",
-      redirectUrlComplete: "/app/dashboard",
+      redirectUrlComplete: "/app/connect-calendar",
+      // @ts-expect-error — additionalOAuthScopes is supported at runtime but may not appear in legacy types
+      additionalOAuthScopes: {
+        google: [
+          "https://www.googleapis.com/auth/calendar",
+          "https://www.googleapis.com/auth/calendar.events",
+        ],
+      },
     });
   }
 

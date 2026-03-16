@@ -16,7 +16,7 @@ export default function SSOCallback() {
       signUpForceRedirectUrl="/app/connect-calendar"
       signUpFallbackRedirectUrl="/app/connect-calendar"
       signInUrl="/login"
-      signUpUrl="/signup"
+      signUpUrl="/login"
     />
     </div>
   );

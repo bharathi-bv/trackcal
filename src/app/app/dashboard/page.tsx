@@ -8,8 +8,6 @@
 import { createServerClient } from "@/lib/supabase";
 import BookingsDashboardClient from "@/components/dashboard/BookingsDashboardClient";
 import type { UpcomingBooking } from "@/components/dashboard/BookingsDashboardClient";
-import GettingStartedPanel from "@/components/dashboard/GettingStartedPanel";
-import type { SetupStatus } from "@/components/dashboard/GettingStartedPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -36,35 +34,6 @@ export default async function DashboardPage() {
   const rangeEnd   = toISODate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 60));
 
   const db = createServerClient();
-
-  // ── Setup status for Getting Started panel ────────────────────────────────
-  const [
-    { data: calAccounts },
-    { data: hostSettings },
-    { data: schedules },
-  ] = await Promise.all([
-    db.from("calendar_accounts").select("provider, email"),
-    db.from("host_settings").select("google_refresh_token, microsoft_refresh_token, zoom_access_token, booking_base_url").single(),
-    db.from("availability_schedules").select("id").limit(1),
-  ]);
-
-  const calendarAccounts = (calAccounts ?? []) as Array<{ provider: "google" | "microsoft"; email: string | null }>;
-
-  // Legacy fallback: tokens may be in host_settings instead of calendar_accounts
-  const legacyGoogle = !!(hostSettings?.google_refresh_token) &&
-    !calendarAccounts.find(a => a.provider === "google");
-  const legacyMicrosoft = !!(hostSettings?.microsoft_refresh_token) &&
-    !calendarAccounts.find(a => a.provider === "microsoft");
-  if (legacyGoogle) calendarAccounts.push({ provider: "google", email: null });
-  if (legacyMicrosoft) calendarAccounts.push({ provider: "microsoft", email: null });
-
-  const setupStatus: SetupStatus = {
-    calendarConnected: calendarAccounts.length > 0,
-    calendarAccounts,
-    availabilitySet: (schedules ?? []).length > 0,
-    zoomConnected: !!(hostSettings?.zoom_access_token),
-    customDomainSet: !!(hostSettings?.booking_base_url),
-  };
 
   const { data: windowBookings } = await db
     .from("bookings")
@@ -102,8 +71,6 @@ export default async function DashboardPage() {
           Yesterday, today, and tomorrow&apos;s meetings.
         </p>
       </div>
-
-      <GettingStartedPanel status={setupStatus} />
 
       <BookingsDashboardClient
         bookings={bookings}
