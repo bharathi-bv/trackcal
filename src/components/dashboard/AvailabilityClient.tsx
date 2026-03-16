@@ -316,26 +316,31 @@ export default function AvailabilityClient({
         ) : null}
       </div>
 
-      {/* Right column: sticky calendar — top offset accounts for nav bar height (62px) + page padding (24px) */}
+      {/* Right column: aligned to the tab divider, with an inner sticky panel */}
       <div style={{
         flex: "0 0 620px",
         minWidth: 620,
         maxWidth: 620,
         alignSelf: "flex-start",
-        marginTop: 92,
-        border: "1px solid var(--border-subtle)",
-        borderRadius: "var(--radius-lg)",
-        overflow: "hidden",
-        background: "var(--color-surface)",
-        position: "sticky",
-        top: 24,
       }}>
-        <WeeklyCalendarView
-          accounts={accounts}
-          timezone={timezone}
-          onTimezoneChange={setTimezone}
-          selectedSchedule={selectedSchedule}
-        />
+        <div
+          style={{
+            marginTop: 86,
+            position: "sticky",
+            top: 24,
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-lg)",
+            overflow: "hidden",
+            background: "var(--color-surface)",
+          }}
+        >
+          <WeeklyCalendarView
+            accounts={accounts}
+            timezone={timezone}
+            onTimezoneChange={setTimezone}
+            selectedSchedule={selectedSchedule}
+          />
+        </div>
       </div>
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
